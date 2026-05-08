@@ -2,25 +2,8 @@
 
 A terminal UI music player for Tidal, built with Rust.
 
-```
-┌────────────────────┬──────────────────────────────────────┬──────────────┐
-│  [album art]       │  Favorites (142)                     │  Queue       │
-│                    │    1. Song Title — Artist (3:45)     │  ♪ Artist    │ 
-│  ────────────────  │  ▶ 2. Another Song — Artist (4:12)   │    Song      │
-│  Favorites         │    3. Third Track — Artist (2:58)    │  Artist      │
-│  Artists           │                                      │    Song      │
-│  Playlists         │                                      │              │
-│  Search            │                                      │              │
-├────────────────────┴──────────────────────────────────────┴──────────────┤
-│  Verse one of the current lyrics goes here                               │
-│  This line is the current lyric, displayed in bold                       │
-│  Next line follows here                                                  │
-│                                                                          │
-│  Track Title                    ▄▄▅▆▇▆▅▄▅▆▇▆▅              0:42 / 3:45   │
-│  Artist Name                                                             │
-│  Album Name              FLAC                                            │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+<img width="1920" height="1080" alt="Screenshot_2026-05-08-160905" src="https://github.com/user-attachments/assets/70684d59-be7d-4793-938a-8f619334f0ad" />
+
 
 ## Features
 
@@ -47,11 +30,6 @@ A terminal UI music player for Tidal, built with Rust.
 | Linux (Debian/Ubuntu) | `sudo apt install mpv` |
 | Linux (Arch)          | `sudo pacman -S mpv`   |
 | Linux (Fedora)        | `sudo dnf install mpv` |
-| macOS                 | `brew install mpv`     |
-| Windows (Scoop)       | `scoop install mpv`    |
-| Windows (Chocolatey)  | `choco install mpv`    |
-
-On Windows, pre-built binaries are also available at [mpv.io](https://mpv.io/installation/). Extract the archive and add the folder containing `mpv.exe` to your `PATH`.
 
 ## Installation
 
@@ -89,8 +67,6 @@ The config file lives at:
 | Platform | Path                                                |
 |----------|-----------------------------------------------------|
 | Linux    | `~/.config/typhoon/config.json`                     |
-| macOS    | `~/Library/Application Support/typhoon/config.json` |
-| Windows  | `%APPDATA%\typhoon\config.json`                     |
 
 It is created automatically on first run. Example:
 
