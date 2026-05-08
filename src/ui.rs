@@ -768,6 +768,8 @@ pub fn is_kitty() -> bool {
     std::env::var("KITTY_WINDOW_ID").is_ok()
 }
 
+
+
 /// Build a Kitty graphics protocol escape sequence for the given raw image bytes.
 /// `image_id`: 1 = sidebar art, 2 = album detail art.
 fn kitty_image_seq(bytes: &[u8], cols: u16, rows: u16, image_id: u16) -> String {
@@ -846,7 +848,7 @@ fn image_to_half_blocks(data: &[u8], cols: u32, rows: u32) -> Vec<Line<'static>>
 
 fn render_album_detail(f: &mut Frame, app: &App, detail: &crate::app::AlbumDetail, area: Rect) {
     // Left column: art (top) + metadata (below).  Right column: full-height track list.
-    let art_cols = (area.width * 2 / 5).max(10);
+    let art_cols = (area.width / 4).max(10);
     let art_rows = (art_cols / 2).max(5).min(area.height.saturating_sub(7)); // cap so metadata fits
     let art_box_h = art_rows + 2; // +2 borders
     let left_col_w = art_cols + 2;
@@ -1358,7 +1360,7 @@ fn render_squib(app: &App, width: u16) -> Paragraph<'static> {
 
     let ratio = app.now_playing.progress_ratio();
     let played_w = ((width as f64 * ratio) as u16).min(width);
-    let playing = app.now_playing.track.is_some() && !app.now_playing.paused;
+    let playing = app.now_playing.active && !app.now_playing.paused;
 
     let spans: Vec<Span<'static>> = (0..width)
         .map(|i| {

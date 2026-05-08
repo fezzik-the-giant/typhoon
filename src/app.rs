@@ -277,6 +277,8 @@ impl CommandState {
 
 pub struct NowPlaying {
     pub track: Option<Track>,
+    /// True only after mpv fires TrackStarted; false on startup and after the queue empties.
+    pub active: bool,
     pub paused: bool,
     pub position: f64,
     pub duration: f64,
@@ -294,6 +296,7 @@ impl Default for NowPlaying {
     fn default() -> Self {
         Self {
             track: None,
+            active: false,
             paused: true,
             position: 0.0,
             duration: 0.0,
@@ -575,6 +578,7 @@ impl App {
     pub fn handle_player_event(&mut self, event: PlayerEvent) {
         match event {
             PlayerEvent::TrackStarted => {
+                self.now_playing.active = true;
                 self.now_playing.paused = false;
             }
             PlayerEvent::TrackEnded => {
@@ -590,6 +594,8 @@ impl App {
                         let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: next.id });
                     }
                     self.fetch_now_playing_metadata();
+                } else {
+                    self.now_playing.active = false;
                 }
                 self.now_playing.position = 0.0;
             }
@@ -688,6 +694,7 @@ impl App {
             self.now_playing.queue.remove(idx);
             if self.now_playing.queue.is_empty() {
                 self.now_playing.track = None;
+                self.now_playing.active = false;
                 self.now_playing.queue_index = 0;
                 let _ = self.player_tx.send(PlayerCmd::Stop);
                 self.queue_focused = false;
