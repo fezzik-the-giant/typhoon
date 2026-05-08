@@ -127,12 +127,13 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadArtistBio { artist_id } => {
             // A missing bio (404 or empty) is not an error — return empty string.
-            let text = match client.get_artist_bio(artist_id).await {
+            let raw = match client.get_artist_bio(artist_id).await {
                 Ok(resp) => resp.text
                     .or(resp.summary)
                     .unwrap_or_default(),
                 Err(_) => String::new(),
             };
+            let text = strip_wimplinks(&raw);
             ApiResponse::ArtistBio { artist_id, text }
         }
 
@@ -233,4 +234,21 @@ fn parse_lrc_time(s: &str) -> Option<f64> {
     let mins: f64 = s[..colon].parse().ok()?;
     let secs: f64 = s[colon + 1..].parse().ok()?;
     Some(mins * 60.0 + secs)
+}
+
+/// Strip Tidal's [wimpLink ...]...[/wimpLink] markup, keeping the inner text.
+fn strip_wimplinks(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        rest = &rest[open..];
+        if let Some(close) = rest.find(']') {
+            rest = &rest[close + 1..];
+        } else {
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
 }
