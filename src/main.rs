@@ -15,11 +15,13 @@ use tokio::sync::mpsc;
 mod api;
 mod app;
 mod events;
+mod mpris;
 mod player;
 mod ui;
 
 use api::ApiWorker;
 use app::App;
+use mpris::MprisServer;
 use player::PlayerWorker;
 
 fn setup_panic_hook() {
@@ -45,8 +47,12 @@ fn main() -> Result<()> {
     // Channels: TUI → ApiWorker and TUI → PlayerWorker
     let (api_req_tx, api_req_rx) = mpsc::unbounded_channel();
     let (api_resp_tx, api_resp_rx) = mpsc::unbounded_channel();
-    let (player_cmd_tx, player_cmd_rx) = mpsc::unbounded_channel();
+    let (player_cmd_tx, player_cmd_rx) = mpsc::unbounded_channel::<crate::player::PlayerCmd>();
     let (player_evt_tx, player_evt_rx) = mpsc::unbounded_channel();
+
+    // Channels for MPRIS: TUI → MPRIS server (state updates) and MPRIS → TUI (control commands)
+    let (mpris_state_tx, mpris_state_rx) = tokio::sync::watch::channel(mpris::MprisState::default());
+    let (mpris_cmd_tx, mpris_cmd_rx) = mpsc::unbounded_channel::<mpris::MprisCmd>();
 
     // Spawn async workers on a dedicated Tokio thread.
     // We keep the handle so we can join it on exit and let PlayerWorker kill mpv cleanly.
@@ -56,7 +62,8 @@ fn main() -> Result<()> {
         rt.block_on(async move {
             let api_worker = ApiWorker::new(worker_config, api_req_rx, api_resp_tx);
             let player_worker = PlayerWorker::new(player_cmd_rx, player_evt_tx);
-            tokio::join!(api_worker.run(), player_worker.run());
+            let mpris_server = MprisServer::new(mpris_state_rx, mpris_cmd_tx);
+            tokio::join!(api_worker.run(), player_worker.run(), mpris_server.run());
         });
     });
 
@@ -68,8 +75,8 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Build app state and run
-    let mut app = App::new(config, api_req_tx, player_cmd_tx);
-    let result = events::run_app(&mut terminal, &mut app, api_resp_rx, player_evt_rx);
+    let mut app = App::new(api_req_tx, player_cmd_tx, mpris_state_tx);
+    let result = events::run_app(&mut terminal, &mut app, api_resp_rx, player_evt_rx, mpris_cmd_rx);
 
     // Restore terminal unconditionally
     disable_raw_mode()?;

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::api::{ApiRequest, ApiResponse};
 use crate::api::models::*;
+use crate::mpris::MprisState;
 use crate::player::{PlayerCmd, PlayerEvent};
 
 // ── Tab ───────────────────────────────────────────────────────────────────────
@@ -364,13 +365,14 @@ pub struct App {
 
     pub api_tx: mpsc::UnboundedSender<ApiRequest>,
     pub player_tx: mpsc::UnboundedSender<PlayerCmd>,
+    pub mpris_tx: watch::Sender<MprisState>,
 }
 
 impl App {
     pub fn new(
-        config: Config,
         api_tx: mpsc::UnboundedSender<ApiRequest>,
         player_tx: mpsc::UnboundedSender<PlayerCmd>,
+        mpris_tx: watch::Sender<MprisState>,
     ) -> Self {
         let mut app = Self {
             should_quit: false,
@@ -388,6 +390,7 @@ impl App {
             status: None,
             api_tx,
             player_tx,
+            mpris_tx,
         };
         // Kick off initial data loads
         app.load_artists();
@@ -489,7 +492,6 @@ impl App {
             }
 
             ApiResponse::AlbumArt { album_id, image_data } => {
-                // Update sidebar art if this is the currently playing album.
                 let is_now_playing = self.now_playing.track.as_ref()
                     .map(|t| t.album.id) == Some(album_id);
                 if is_now_playing {
@@ -580,6 +582,11 @@ impl App {
             PlayerEvent::TrackStarted => {
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
+                if let Some(track) = &self.now_playing.track {
+                    let title = format!("{} — {}", track.artist_name(), track.title);
+                    let _ = self.player_tx.send(PlayerCmd::SetMediaTitle(title));
+                }
+                self.push_mpris_state();
             }
             PlayerEvent::TrackEnded => {
                 // mpv has already auto-advanced to the appended next track in its
@@ -596,6 +603,7 @@ impl App {
                     self.fetch_now_playing_metadata();
                 } else {
                     self.now_playing.active = false;
+                    self.push_mpris_state();
                 }
                 self.now_playing.position = 0.0;
             }
@@ -607,6 +615,7 @@ impl App {
             }
             PlayerEvent::Paused(p) => {
                 self.now_playing.paused = p;
+                self.push_mpris_state();
             }
             PlayerEvent::Volume(_) => {}
             PlayerEvent::Error(e) => {
@@ -621,9 +630,11 @@ impl App {
         self.now_playing.queue = vec![track.clone()];
         self.now_playing.queue_index = 0;
         self.now_playing.track = Some(track.clone());
+        self.now_playing.active = false;
         self.now_playing.position = 0.0;
         let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
         self.fetch_now_playing_metadata();
+        self.push_mpris_state();
     }
 
     pub fn play_tracks(&mut self, tracks: Vec<Track>, start_index: usize) {
@@ -633,11 +644,13 @@ impl App {
         self.now_playing.queue = tracks.clone();
         self.now_playing.queue_index = start_index;
         self.now_playing.track = tracks.get(start_index).cloned();
+        self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(track) = tracks.get(start_index) {
             let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
         }
         self.fetch_now_playing_metadata();
+        self.push_mpris_state();
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
@@ -675,11 +688,13 @@ impl App {
         }
         self.now_playing.queue_index = idx;
         self.now_playing.track = self.now_playing.queue.get(idx).cloned();
+        self.now_playing.active = false;
         self.now_playing.position = 0.0;
         if let Some(track) = self.now_playing.queue.get(idx) {
             let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
         }
         self.fetch_now_playing_metadata();
+        self.push_mpris_state();
         self.queue_focused = false;
     }
 
@@ -697,6 +712,7 @@ impl App {
                 self.now_playing.active = false;
                 self.now_playing.queue_index = 0;
                 let _ = self.player_tx.send(PlayerCmd::Stop);
+                self.push_mpris_state();
                 self.queue_focused = false;
                 return;
             }
@@ -738,11 +754,13 @@ impl App {
         if next_idx < self.now_playing.queue.len() {
             self.now_playing.queue_index = next_idx;
             self.now_playing.track = self.now_playing.queue.get(next_idx).cloned();
+            self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(next_idx) {
                 let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
             self.fetch_now_playing_metadata();
+            self.push_mpris_state();
         }
     }
 
@@ -751,12 +769,35 @@ impl App {
             let prev_idx = self.now_playing.queue_index - 1;
             self.now_playing.queue_index = prev_idx;
             self.now_playing.track = self.now_playing.queue.get(prev_idx).cloned();
+            self.now_playing.active = false;
             self.now_playing.position = 0.0;
             if let Some(track) = self.now_playing.queue.get(prev_idx) {
                 let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
             }
             self.fetch_now_playing_metadata();
+            self.push_mpris_state();
         }
+    }
+
+    pub fn push_mpris_state(&self) {
+        let state = match &self.now_playing.track {
+            Some(t) => MprisState {
+                title: t.title.clone(),
+                artist: t.artist_name().to_owned(),
+                album: t.album.title.clone(),
+                art_url: t.album.cover.as_deref()
+                    .map(|id| format!(
+                        "https://resources.tidal.com/images/{}/320x320.jpg",
+                        id.replace('-', "/")
+                    ))
+                    .unwrap_or_default(),
+                duration_us: t.duration as i64 * 1_000_000,
+                paused: self.now_playing.paused,
+                active: self.now_playing.active,
+            },
+            None => MprisState::default(),
+        };
+        let _ = self.mpris_tx.send(state);
     }
 
     fn fetch_now_playing_metadata(&mut self) {

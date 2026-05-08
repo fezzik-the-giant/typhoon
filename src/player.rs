@@ -21,6 +21,7 @@ pub enum PlayerCmd {
     Stop,
     RemoveNext,
     SetVolume(u8),
+    SetMediaTitle(String),
 }
 
 #[derive(Debug)]
@@ -98,12 +99,13 @@ impl PlayerWorker {
                         }
                         other => {
                             let msg = match other {
-                                PlayerCmd::Append(url) => json!({"command": ["loadfile", url, "append"]}),
-                                PlayerCmd::TogglePause  => json!({"command": ["cycle", "pause"]}),
-                                PlayerCmd::Stop         => json!({"command": ["stop"]}),
-                                PlayerCmd::RemoveNext   => json!({"command": ["playlist-remove", 1]}),
-                                PlayerCmd::SetVolume(v) => json!({"command": ["set_property", "volume", v]}),
-                                PlayerCmd::Play(_)      => unreachable!(),
+                                PlayerCmd::Append(url)       => json!({"command": ["loadfile", url, "append"]}),
+                                PlayerCmd::TogglePause       => json!({"command": ["cycle", "pause"]}),
+                                PlayerCmd::Stop              => json!({"command": ["stop"]}),
+                                PlayerCmd::RemoveNext        => json!({"command": ["playlist-remove", 1]}),
+                                PlayerCmd::SetVolume(v)      => json!({"command": ["set_property", "volume", v]}),
+                                PlayerCmd::SetMediaTitle(t)  => json!({"command": ["set_property", "force-media-title", t]}),
+                                PlayerCmd::Play(_)           => unreachable!(),
                             };
                             let _ = ipc_tx.send(IpcRequest::Write(msg.to_string()));
                         }
@@ -141,6 +143,7 @@ impl PlayerWorker {
                 &format!("--input-ipc-server={SOCKET_PATH}"),
                 "--really-quiet",
                 "--prefetch-playlist=yes",
+                "--load-scripts=no",
             ])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::api::{ApiRequest, ApiResponse};
 use crate::app::{App, ArtistDetailFocus, CommandState, SearchPane, Tab, View};
+use crate::mpris::MprisCmd;
 use crate::player::{PlayerCmd, PlayerEvent};
 
 pub fn run_app(
@@ -14,6 +15,7 @@ pub fn run_app(
     app: &mut App,
     mut api_rx: mpsc::UnboundedReceiver<ApiResponse>,
     mut player_rx: mpsc::UnboundedReceiver<PlayerEvent>,
+    mut mpris_rx: mpsc::UnboundedReceiver<MprisCmd>,
 ) -> anyhow::Result<()> {
     loop {
         terminal.draw(|f| crate::ui::draw(f, app))?;
@@ -26,6 +28,16 @@ pub fn run_app(
         // Drain player events
         while let Ok(evt) = player_rx.try_recv() {
             app.handle_player_event(evt);
+        }
+
+        // Drain MPRIS control commands
+        while let Ok(cmd) = mpris_rx.try_recv() {
+            match cmd {
+                MprisCmd::Next => app.next_track(),
+                MprisCmd::Previous => app.prev_track(),
+                MprisCmd::PlayPause | MprisCmd::Play | MprisCmd::Pause => app.toggle_pause(),
+                MprisCmd::Stop => { let _ = app.player_tx.send(PlayerCmd::Stop); }
+            }
         }
 
         // Check for more data to load
