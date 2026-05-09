@@ -33,7 +33,7 @@ A terminal UI music player for Tidal, built with Rust.
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/typhoon
+git clone https://github.com/fezzik-the-giant/typhoon
 cd typhoon
 cargo install --path .
 ```
