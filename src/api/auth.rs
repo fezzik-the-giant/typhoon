@@ -87,7 +87,6 @@ pub fn ensure_auth(config: &mut Config) -> Result<()> {
 
 fn make_blocking_client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()
-        .use_rustls_tls()
         .user_agent("Mozilla/5.0 (Linux; Android 12; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36")
         .build()?)
 }

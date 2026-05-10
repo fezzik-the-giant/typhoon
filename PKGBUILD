@@ -6,8 +6,8 @@ pkgdesc="A terminal UI music player for Tidal, built with Rust"
 arch=('x86_64')
 url="https://github.com/fezzik-the-giant/typhoon"
 license=('GPL-3.0-only')
-depends=('mpv')
-makedepends=('rust' 'cargo')
+depends=('mpv' 'openssl')
+makedepends=('rust' 'cargo' 'pkg-config')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/fezzik-the-giant/typhoon/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
@@ -21,7 +21,7 @@ build() {
     cd "$pkgname-$pkgver"
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
-    cargo build --frozen --release --all-features
+    cargo build --frozen --release
 }
 
 check() {

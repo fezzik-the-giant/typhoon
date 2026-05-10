@@ -21,7 +21,6 @@ pub struct ApiClient {
 impl ApiClient {
     pub fn new(config: Config) -> Self {
         let http = reqwest::Client::builder()
-            .use_rustls_tls()
             .user_agent(USER_AGENT)
             .build()
             .expect("failed to build HTTP client");
