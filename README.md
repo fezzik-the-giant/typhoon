@@ -32,8 +32,19 @@ A terminal UI music player for Tidal, built with Rust.
 
 ## Installation
 
+### AUR
+
+Riptide is available to Arch users on the AUR and can be installed with:
+
 ```bash
-git clone https://github.com/yourname/riptide
+paru -S riptide
+
+# or if using yay
+yay -S riptide
+```
+
+```bash
+git clone https://github.com/fezzik-the-giant/riptide
 cd riptide
 cargo install --path .
 ```
@@ -42,7 +53,7 @@ The `riptide` binary will be placed in `~/.cargo/bin/`. Make sure that directory
 
 ## First run & authentication
 
-riptide uses Tidal's OAuth device-authorization flow. On first launch it will print a URL and a short code:
+Riptide uses Tidal's OAuth device-authorization flow. On first launch it will print a URL and a short code:
 
 ```
 ╔══════════════════════════════════════════╗
@@ -57,7 +68,7 @@ riptide uses Tidal's OAuth device-authorization flow. On first launch it will pr
 Waiting for authorization…
 ```
 
-Open the URL in a browser, log in with your Tidal account, and enter the code. riptide will save your tokens to the config file and launch immediately. You will not need to authenticate again unless your refresh token expires.
+Open the URL in a browser, log in with your Tidal account, and enter the code. Riptide will save your tokens to the config file and launch immediately. You will not need to authenticate again unless your refresh token expires.
 
 ## Configuration
 
@@ -84,7 +95,7 @@ It is created automatically on first run. Example:
 
 ### Using your own OAuth credentials
 
-riptide ships with built-in fallback credentials (provided by the open-source [tidalapi](https://github.com/tamland/python-tidal) project). If those credentials are ever revoked you can substitute your own:
+Riptide ships with built-in fallback credentials (provided by the open-source [tidalapi](https://github.com/tamland/python-tidal) project). If those credentials are ever revoked you can substitute your own:
 
 1. Register a device-authorization client at [developer.tidal.com](https://developer.tidal.com)
 2. Add your credentials to `config.json`:
@@ -164,7 +175,7 @@ Press `→` / `l` from any main tab to focus the queue.
 
 ## Kitty terminal graphics
 
-If you run riptide inside [Kitty](https://sw.kovidgoyal.net/kitty/), album art and artist pictures are rendered at full pixel resolution using the Kitty graphics protocol. In any other terminal, a half-block (`▀`) approximation is used instead.
+If you run Riptide inside [Kitty](https://sw.kovidgoyal.net/kitty/), album art and artist pictures are rendered at full pixel resolution using the Kitty graphics protocol. In any other terminal, a half-block (`▀`) approximation is used instead.
 
 ## License
 
