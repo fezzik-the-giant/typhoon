@@ -156,21 +156,6 @@ fn render_sidebar_art(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_sidebar_nav(f: &mut Frame, app: &App, area: Rect) {
-    if app.search.active {
-        let cursor = if (app.tick / 30) % 2 == 0 { "█" } else { " " };
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(" / ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    format!("{}{}", app.search.query, cursor),
-                    Style::default().fg(Color::White),
-                ),
-            ])),
-            area,
-        );
-        return;
-    }
-
     for (i, tab) in Tab::ALL.iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
@@ -984,28 +969,53 @@ fn render_album_detail(f: &mut Frame, app: &App, detail: &crate::app::AlbumDetai
 
 // ── Search results (three-pane layout) ───────────────────────────────────────
 
+fn render_search_input_line(app: &App) -> Line<'static> {
+    let cursor = if (app.tick / 30) % 2 == 0 { "█" } else { " " };
+    if app.search.query.is_empty() {
+        Line::from(vec![
+            Span::styled("Search  ", Style::default().fg(DIM)),
+            Span::styled(cursor.to_owned(), Style::default().fg(ACCENT)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("Search  ", Style::default().fg(DIM)),
+            Span::styled(app.search.query.clone(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(cursor.to_owned(), Style::default().fg(ACCENT)),
+        ])
+    }
+}
+
 fn render_search_results(f: &mut Frame, app: &App, area: Rect) {
+    // Empty state — no results and not loading
     if app.search.total_results() == 0 && !app.search.loading {
-        let hint = if app.search.query.is_empty() {
-            "Press / to start searching"
-        } else {
-            "No results"
-        };
         let block = Block::default()
-            .title(" Search ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(ACCENT));
         let inner = block.inner(area);
         f.render_widget(block, area);
+
+        let rows = Layout::vertical([
+            Constraint::Percentage(50),
+            Constraint::Length(1),
+            Constraint::Percentage(50),
+        ])
+        .split(inner);
+
+        let content: Line = if app.search.active {
+            render_search_input_line(app)
+        } else if app.search.query.is_empty() {
+            Line::from(Span::styled("Start typing to search", Style::default().fg(DIM)))
+        } else {
+            Line::from(Span::styled("No results", Style::default().fg(DIM)))
+        };
         f.render_widget(
-            Paragraph::new(hint)
-                .style(Style::default().fg(DIM))
-                .alignment(Alignment::Center),
-            inner,
+            Paragraph::new(content).alignment(Alignment::Center),
+            rows[1],
         );
         return;
     }
 
+    // Loading state
     if app.search.loading {
         let spinner = spinner_char(app.tick);
         let block = Block::default()
@@ -1016,12 +1026,27 @@ fn render_search_results(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Results — optionally show live input above panes when user is re-searching
+    let (input_area, results_area) = if app.search.active {
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(area);
+        (Some(rows[0]), rows[1])
+    } else {
+        (None, area)
+    };
+
+    if let Some(ia) = input_area {
+        f.render_widget(
+            Paragraph::new(render_search_input_line(app)).alignment(Alignment::Center),
+            ia,
+        );
+    }
+
     let panes = Layout::horizontal([
         Constraint::Percentage(40),
         Constraint::Percentage(30),
         Constraint::Percentage(30),
     ])
-    .split(area);
+    .split(results_area);
 
     render_search_pane_tracks(f, app, panes[0]);
     render_search_pane_artists(f, app, panes[1]);

@@ -111,13 +111,9 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             app.command.selected = 0;
         }
         KeyCode::Tab => {
-            if app.current_tab == Tab::Search && app.view_stack.is_empty() {
-                app.search.next_pane();
-            } else {
-                if leaving_album(app) { kitty_delete_album_art(); }
-                if leaving_artist(app) { kitty_delete_artist_art(); }
-                app.next_tab();
-            }
+            if leaving_album(app) { kitty_delete_album_art(); }
+            if leaving_artist(app) { kitty_delete_artist_art(); }
+            app.next_tab();
         }
         KeyCode::Char(' ') => app.toggle_pause(),
         KeyCode::Char('n') => app.next_track(),
@@ -200,8 +196,6 @@ fn execute_command(app: &mut App, cmd: &str) {
         "search" => {
             cleanup(app);
             app.set_tab(Tab::Search);
-            app.search.active = true;
-            app.search.query.clear();
         }
         _ => {}
     }
