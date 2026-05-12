@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Ryan Cohan
 
 use anyhow::{Context, Result};
+use base64::Engine as _;
 use serde::de::DeserializeOwned;
 use tokio::sync::RwLock;
 
@@ -80,9 +81,6 @@ impl ApiClient {
         })
     }
 
-    fn cc(&self) -> String {
-        self.config.country_code.clone()
-    }
 
     fn uid(&self) -> Result<u64> {
         self.config.user_id.context("user_id not set — re-run to re-authenticate")
@@ -177,6 +175,10 @@ impl ApiClient {
 
     // ── Albums ────────────────────────────────────────────────────────────────
 
+    pub async fn get_album(&self, album_id: u64) -> Result<Album> {
+        self.get(&format!("/albums/{album_id}"), &[]).await
+    }
+
     pub async fn get_album_tracks(&self, album_id: u64) -> Result<Page<Track>> {
         self.get(
             &format!("/albums/{album_id}/tracks"),
@@ -199,16 +201,142 @@ impl ApiClient {
     }
 
     pub async fn get_stream_url(&self, track_id: u64) -> Result<String> {
-        let resp: StreamUrlResponse = self.get(
-            &format!("/tracks/{track_id}/urlpostpaywall"),
-            &[
-                ("urlusagemode", "STREAM".to_string()),
-                ("audioquality", "HIGH".to_string()),
-                ("assetpresentation", "FULL".to_string()),
-            ],
-        )
-        .await?;
+        const QUALITIES: &[&str] = &["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"];
+        let path = format!("/tracks/{track_id}/playbackinfopostpaywall");
 
-        resp.urls.into_iter().next().context("empty URL list from Tidal")
+        for &quality in QUALITIES {
+            let result: Result<PlaybackInfo> = self.get(
+                &path,
+                &[
+                    ("audioquality", quality.to_string()),
+                    ("playbackmode", "STREAM".to_string()),
+                    ("assetpresentation", "FULL".to_string()),
+                ],
+            ).await;
+
+            match result {
+                Ok(info) => {
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(&info.manifest)
+                        .context("base64 decode of manifest")?;
+                    match info.manifest_mime_type.as_str() {
+                        "application/vnd.tidal.bts" => {
+                            let manifest: BtsManifest = serde_json::from_slice(&bytes)
+                                .context("parse BTS manifest")?;
+                            if let Some(url) = manifest.urls.into_iter().next() {
+                                return Ok(url);
+                            }
+                        }
+                        "application/dash+xml" => {
+                            let xml = String::from_utf8_lossy(&bytes);
+                            let path = dash_to_hls(track_id, &xml)
+                                .context("convert DASH manifest to HLS")?;
+                            return Ok(path);
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    let status = e.downcast_ref::<reqwest::Error>()
+                        .and_then(|re| re.status());
+                    let entitlement_denied = matches!(
+                        status,
+                        Some(reqwest::StatusCode::UNAUTHORIZED) | Some(reqwest::StatusCode::FORBIDDEN)
+                    );
+                    if entitlement_denied {
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("no stream URL available for track {track_id}"))
     }
+}
+
+// ── DASH → HLS conversion ─────────────────────────────────────────────────────
+
+/// Convert a Tidal DASH manifest to an HLS playlist served via local HTTP.
+fn dash_to_hls(track_id: u64, xml: &str) -> anyhow::Result<String> {
+    let init_url = dash_attr(xml, "initialization")
+        .context("no initialization URL in DASH manifest")?;
+    let media_tmpl = dash_attr(xml, "media")
+        .context("no media template in DASH manifest")?;
+    let timescale: f64 = dash_attr(xml, "timescale")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1.0);
+    let start_num: u64 = dash_attr(xml, "startNumber")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+
+    let durations = dash_segment_durations(xml, timescale);
+    anyhow::ensure!(!durations.is_empty(), "no segments in DASH manifest");
+
+    let target = durations.iter().cloned().fold(0f64, f64::max).ceil() as u64;
+    let mut m3u8 = format!(
+        "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MAP:URI=\"{init_url}\"\n"
+    );
+    for (i, dur) in durations.iter().enumerate() {
+        m3u8.push_str(&format!("#EXTINF:{dur:.5},\n"));
+        m3u8.push_str(&media_tmpl.replace("$Number$", &(start_num + i as u64).to_string()));
+        m3u8.push('\n');
+    }
+    m3u8.push_str("#EXT-X-ENDLIST\n");
+
+    std::fs::write(format!("/tmp/riptide_hls_{track_id}.m3u8"), &m3u8)
+        .context("write HLS playlist")?;
+    Ok(format!("http://127.0.0.1:{}/{track_id}.m3u8", crate::manifest::PORT))
+}
+
+/// Extract an XML attribute value by name, checking that it isn't a substring
+/// of a longer attribute name (e.g. `d` must not match `id`).
+fn dash_attr(xml: &str, name: &str) -> Option<String> {
+    let needle = format!("{}=\"", name);
+    let mut haystack = xml;
+    while let Some(pos) = haystack.find(&needle) {
+        let before = pos
+            .checked_sub(1)
+            .and_then(|i| haystack.as_bytes().get(i).copied())
+            .map(|b| b as char)
+            .unwrap_or(' ');
+        if !before.is_alphanumeric() && before != '_' && before != '-' {
+            let start = pos + needle.len();
+            let end = haystack[start..].find('"')? + start;
+            return Some(haystack[start..end].to_owned());
+        }
+        haystack = &haystack[pos + needle.len()..];
+    }
+    None
+}
+
+/// Parse `<S d="..." r="..."/>` elements inside `<SegmentTimeline>`.
+fn dash_segment_durations(xml: &str, timescale: f64) -> Vec<f64> {
+    let mut out = Vec::new();
+    let tl_start = match xml.find("<SegmentTimeline>") {
+        Some(p) => p,
+        None => return out,
+    };
+    let tl = &xml[tl_start..];
+    let tl_end = match tl.find("</SegmentTimeline>") {
+        Some(p) => p,
+        None => return out,
+    };
+    let mut rest = &tl[..tl_end];
+    while let Some(pos) = rest.find("<S ") {
+        let inner_start = pos + 3;
+        let inner_end = rest[inner_start..]
+            .find("/>")
+            .map(|p| p + inner_start)
+            .unwrap_or(rest.len());
+        let elem = &rest[inner_start..inner_end];
+        let d: f64 = dash_attr(elem, "d").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let r: usize = dash_attr(elem, "r").and_then(|s| s.parse().ok()).unwrap_or(0);
+        let dur = d / timescale;
+        for _ in 0..=r {
+            out.push(dur);
+        }
+        rest = &rest[inner_end..];
+    }
+    out
 }

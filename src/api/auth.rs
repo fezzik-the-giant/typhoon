@@ -25,7 +25,7 @@ const AUTH_BASE: &str = "https://auth.tidal.com/v1/oauth2";
 pub fn config_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("typhoon")
+        .join("riptide")
         .join("config.json")
 }
 

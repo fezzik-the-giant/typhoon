@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct Page<T> {
-    pub limit: u32,
-    pub offset: u32,
     #[serde(rename = "totalNumberOfItems")]
     pub total: u32,
     pub items: Vec<T>,
@@ -18,7 +16,6 @@ pub struct Page<T> {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ArtistRef {
-    pub id: u64,
     pub name: String,
 }
 
@@ -29,7 +26,6 @@ pub struct Artist {
     pub id: u64,
     pub name: String,
     pub picture: Option<String>,
-    pub url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +34,12 @@ pub struct FavoriteArtistEntry {
 }
 
 // ── Albums ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct MediaMetadata {
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Album {
@@ -49,6 +51,27 @@ pub struct Album {
     pub release_date: Option<String>,
     pub cover: Option<String>,
     pub artist: Option<ArtistRef>,
+    #[serde(rename = "audioQuality", default)]
+    pub audio_quality: Option<String>,
+    #[serde(rename = "mediaMetadata", default)]
+    pub media_metadata: Option<MediaMetadata>,
+}
+
+impl Album {
+    pub fn quality_badge(&self) -> Option<&'static str> {
+        let tags = self.media_metadata.as_ref().map(|m| m.tags.as_slice()).unwrap_or(&[]);
+        if tags.iter().any(|t| t == "HIRES_LOSSLESS") {
+            return Some("MAX");
+        }
+        if tags.iter().any(|t| t == "LOSSLESS") {
+            return Some("HI-FI");
+        }
+        match self.audio_quality.as_deref() {
+            Some("HI_RES") => Some("MQA"),
+            Some("HIGH")   => Some("320"),
+            _              => None,
+        }
+    }
 }
 
 // ── Tracks ────────────────────────────────────────────────────────────────────
@@ -58,8 +81,6 @@ pub struct Track {
     pub id: u64,
     pub title: String,
     pub duration: u32,
-    #[serde(rename = "trackNumber", default)]
-    pub track_number: u32,
     /// Present on most endpoints; absent on search results which use `artists`.
     pub artist: Option<ArtistRef>,
     #[serde(default)]
@@ -67,8 +88,6 @@ pub struct Track {
     pub album: Album,
     #[serde(rename = "audioQuality")]
     pub audio_quality: Option<String>,
-    #[serde(default)]
-    pub explicit: bool,
 }
 
 impl Track {
@@ -111,7 +130,6 @@ pub struct Playlist {
     pub title: String,
     #[serde(rename = "numberOfTracks")]
     pub number_of_tracks: u32,
-    pub description: Option<String>,
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -119,7 +137,6 @@ pub struct Playlist {
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse {
     pub artists: Option<Page<Artist>>,
-    pub albums: Option<Page<Album>>,
     pub tracks: Option<Page<Track>>,
     pub playlists: Option<Page<Playlist>>,
 }
@@ -143,11 +160,19 @@ pub struct LyricsResponse {
 
 // ── Stream URL ────────────────────────────────────────────────────────────────
 
-/// Response from /tracks/{id}/urlpostpaywall
+
+/// Response from /tracks/{id}/playbackinfopostpaywall
 #[derive(Debug, Deserialize)]
-pub struct StreamUrlResponse {
+pub struct PlaybackInfo {
+    #[serde(rename = "manifestMimeType")]
+    pub manifest_mime_type: String,
+    pub manifest: String,
+}
+
+/// Decoded content of a `application/vnd.tidal.bts` manifest
+#[derive(Debug, Deserialize)]
+pub struct BtsManifest {
     pub urls: Vec<String>,
-    pub codec: Option<String>,
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -163,16 +188,6 @@ pub struct SessionInfo {
     pub country_code: String,
 }
 
-// ── User ──────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct UserProfile {
-    #[serde(rename = "userId")]
-    pub user_id: u64,
-    pub username: String,
-    #[serde(rename = "countryCode")]
-    pub country_code: String,
-}
 
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 
@@ -182,12 +197,8 @@ pub struct DeviceAuthResponse {
     pub device_code: String,
     #[serde(rename = "userCode")]
     pub user_code: String,
-    #[serde(rename = "verificationUri")]
-    pub verification_uri: String,
     #[serde(rename = "verificationUriComplete")]
     pub verification_uri_complete: String,
-    #[serde(rename = "expiresIn")]
-    pub expires_in: u32,
     pub interval: u32,
 }
 
@@ -195,7 +206,6 @@ pub struct DeviceAuthResponse {
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
-    pub token_type: String,
     pub expires_in: u64,
     pub user: Option<TokenUser>,
 }

@@ -10,10 +10,22 @@ use ratatui::{
 };
 
 use crate::app::{App, ArtPayload, ArtistDetailFocus, SearchPane, StatusLevel, Tab, View};
-use crate::api::models::{Album, Artist, Playlist, Track};
+use crate::api::models::Track;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
+
+fn fmt_sample_rate(hz: u32) -> String {
+    match hz {
+        44100  => "44.1 kHz".into(),
+        88200  => "88.2 kHz".into(),
+        176400 => "176.4 kHz".into(),
+        _      => {
+            let khz = hz / 1000;
+            format!("{khz} kHz")
+        }
+    }
+}
 const HIGHLIGHT_BG: Color = Color::Rgb(40, 40, 55);
 const SELECT_BG: Color = Color::Rgb(30, 100, 200);
 const SIDEBAR_W: u16 = 20;
@@ -24,7 +36,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let rows = Layout::vertical([
         Constraint::Min(0),    // sidebar + content + queue
-        Constraint::Length(8), // now-playing bar
+        Constraint::Length(9), // now-playing bar
         Constraint::Length(1), // keybinds bar
     ])
     .split(area);
@@ -373,7 +385,7 @@ fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = visible_artist_items(&app.artists.items, app.artists.selected, height)
         .iter()
         .enumerate()
-        .map(|(i, (abs_idx, artist))| {
+        .map(|(_, (abs_idx, artist))| {
             let selected = *abs_idx == app.artists.selected;
             let style = if selected {
                 Style::default().bg(HIGHLIGHT_BG).fg(Color::White).add_modifier(Modifier::BOLD)
@@ -585,7 +597,6 @@ fn render_artist_tracks(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let height = inner.height as usize;
     let items: Vec<ListItem> = detail.tracks.items
         .iter()
         .enumerate()
@@ -936,18 +947,29 @@ fn render_album_detail(f: &mut Frame, app: &App, detail: &crate::app::AlbumDetai
     let n_tracks = detail.album.number_of_tracks.unwrap_or(0);
     let artist_name = detail.album.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("");
 
-    let info = Paragraph::new(vec![
+    let quality_badge = detail.album.quality_badge();
+
+    let mut meta_lines = vec![
         Line::from(Span::styled(
             detail.album.title.as_str(),
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(artist_name, Style::default().fg(Color::White))),
-        Line::from(Span::styled(
-            format!("{year}  •  {n_tracks} tracks"),
-            Style::default().fg(DIM),
-        )),
-    ])
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(DIM)));
+    ];
+    let mut counts_spans = vec![
+        Span::styled(format!("{year}  •  {n_tracks} tracks"), Style::default().fg(DIM)),
+    ];
+    if let Some(badge) = quality_badge {
+        counts_spans.push(Span::styled("  ", Style::default()));
+        counts_spans.push(Span::styled(
+            badge,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    }
+    meta_lines.push(Line::from(counts_spans));
+
+    let info = Paragraph::new(meta_lines)
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(DIM)));
     f.render_widget(info, header_cols[1]);
 
     // ── Track list (full right column) ────────────────────────────────────────
@@ -1161,22 +1183,34 @@ fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
 
     let track_info: Vec<Line> = match &app.now_playing.track {
         Some(t) => {
-            let quality = t.quality_display();
-            let mut album_spans = vec![
-                Span::styled(t.album.title.as_str(), Style::default().fg(DIM)),
-            ];
-            if !quality.is_empty() {
-                album_spans.push(Span::styled("  ", Style::default()));
-                album_spans.push(Span::styled(
-                    quality,
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ));
-            }
-            vec![
+            let quality_label: Option<String> = {
+                let rate_str = app.now_playing.sample_rate.map(fmt_sample_rate);
+                // mpv may return "FLAC (Free Lossless Audio Codec)" — take first word only.
+                let codec_str = app.now_playing.codec.as_deref().map(|c| {
+                    c.split_whitespace().next().unwrap_or(c).to_uppercase()
+                });
+                match (codec_str, rate_str) {
+                    (Some(c), Some(r)) => Some(format!("{c} · {r}")),
+                    (Some(c), None)    => Some(c),
+                    (None, Some(r))    => Some(r),
+                    (None, None)       => {
+                        let q = t.quality_display();
+                        if q.is_empty() { None } else { Some(q.to_owned()) }
+                    }
+                }
+            };
+            let mut lines = vec![
                 Line::from(Span::styled(t.title.as_str(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
                 Line::from(Span::styled(t.artist_name(), Style::default().fg(Color::White))),
-                Line::from(album_spans),
-            ]
+                Line::from(Span::styled(t.album.title.as_str(), Style::default().fg(DIM))),
+            ];
+            if let Some(label) = quality_label {
+                lines.push(Line::from(Span::styled(
+                    label,
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )));
+            }
+            lines
         }
         None => vec![
             Line::from(Span::styled("No track playing", Style::default().fg(DIM))),

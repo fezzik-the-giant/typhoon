@@ -21,6 +21,7 @@ pub enum ApiRequest {
     LoadArtistTopTracks { artist_id: u64 },
     LoadArtistAlbums { artist_id: u64 },
     LoadArtistBio { artist_id: u64 },
+    LoadAlbum { album_id: u64 },
     LoadAlbumTracks { album_id: u64 },
     FetchAlbumArt { album_id: u64, cover_id: String },
     FetchArtistArt { artist_id: u64, picture_id: String },
@@ -37,6 +38,7 @@ pub enum ApiResponse {
     Favorites(Vec<Track>, u32),
     ArtistTopTracks { artist_id: u64, tracks: Vec<Track> },
     ArtistAlbums { artist_id: u64, albums: Vec<Album> },
+    AlbumLoaded { album: Album },
     AlbumTracks { album_id: u64, tracks: Vec<Track> },
     AlbumArt { album_id: u64, image_data: Vec<u8> },
     ArtistArt { artist_id: u64, image_data: Vec<u8> },
@@ -135,6 +137,13 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             };
             let text = strip_wimplinks(&raw);
             ApiResponse::ArtistBio { artist_id, text }
+        }
+
+        ApiRequest::LoadAlbum { album_id } => {
+            match client.get_album(album_id).await {
+                Ok(album) => ApiResponse::AlbumLoaded { album },
+                Err(e) => ApiResponse::Error(format!("album: {e}")),
+            }
         }
 
         ApiRequest::LoadAlbumTracks { album_id } => {

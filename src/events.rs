@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::api::{ApiRequest, ApiResponse};
-use crate::app::{App, ArtistDetailFocus, CommandState, SearchPane, Tab, View};
+use crate::app::{App, ArtistDetailFocus, SearchPane, Tab, View};
 use crate::mpris::MprisCmd;
 use crate::player::{PlayerCmd, PlayerEvent};
 

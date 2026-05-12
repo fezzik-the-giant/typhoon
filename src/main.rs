@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ryan Cohan
 
-#![allow(dead_code, unused_variables, unused_imports)]
 use std::io;
 use anyhow::Result;
 use crossterm::{
@@ -15,6 +14,7 @@ use tokio::sync::mpsc;
 mod api;
 mod app;
 mod events;
+mod manifest;
 mod mpris;
 mod player;
 mod ui;
@@ -63,6 +63,7 @@ fn main() -> Result<()> {
             let api_worker = ApiWorker::new(worker_config, api_req_rx, api_resp_tx);
             let player_worker = PlayerWorker::new(player_cmd_rx, player_evt_tx);
             let mpris_server = MprisServer::new(mpris_state_rx, mpris_cmd_tx);
+            tokio::spawn(manifest::run_server());
             tokio::join!(api_worker.run(), player_worker.run(), mpris_server.run());
         });
     });

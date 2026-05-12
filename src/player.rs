@@ -3,15 +3,14 @@
 
 use anyhow::{bail, Result};
 use serde_json::json;
-use std::collections::HashMap;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 
-const SOCKET_PATH: &str = "/tmp/typhoon-mpv.sock";
+const SOCKET_PATH: &str = "/tmp/riptide-mpv.sock";
 
 #[derive(Debug)]
 pub enum PlayerCmd {
@@ -20,7 +19,6 @@ pub enum PlayerCmd {
     TogglePause,
     Stop,
     RemoveNext,
-    SetVolume(u8),
     SetMediaTitle(String),
 }
 
@@ -31,7 +29,8 @@ pub enum PlayerEvent {
     Position(f64),
     Duration(f64),
     Paused(bool),
-    Volume(f64),
+    SampleRate(u32),
+    Codec(String),
     Error(String),
 }
 
@@ -72,11 +71,11 @@ impl PlayerWorker {
         let (ipc_tx, ipc_rx) = mpsc::unbounded_channel::<IpcRequest>();
 
         // Spawn write task
-        let write_task = tokio::spawn(write_loop(write_half, ipc_rx));
+        let _write_task = tokio::spawn(write_loop(write_half, ipc_rx));
 
         // Spawn read task
         let event_tx_clone = self.event_tx.clone();
-        let read_task = tokio::spawn(read_loop(read_half, event_tx_clone));
+        let _read_task = tokio::spawn(read_loop(read_half, event_tx_clone));
 
         // Ticker for position polling
         let mut poll_ticker = interval(Duration::from_millis(500));
@@ -103,7 +102,6 @@ impl PlayerWorker {
                                 PlayerCmd::TogglePause       => json!({"command": ["cycle", "pause"]}),
                                 PlayerCmd::Stop              => json!({"command": ["stop"]}),
                                 PlayerCmd::RemoveNext        => json!({"command": ["playlist-remove", 1]}),
-                                PlayerCmd::SetVolume(v)      => json!({"command": ["set_property", "volume", v]}),
                                 PlayerCmd::SetMediaTitle(t)  => json!({"command": ["set_property", "force-media-title", t]}),
                                 PlayerCmd::Play(_)           => unreachable!(),
                             };
@@ -121,6 +119,12 @@ impl PlayerWorker {
                     ));
                     let _ = ipc_tx.send(IpcRequest::Write(
                         json!({"command": ["get_property", "pause"], "request_id": 3}).to_string()
+                    ));
+                    let _ = ipc_tx.send(IpcRequest::Write(
+                        json!({"command": ["get_property", "audio-params"], "request_id": 4}).to_string()
+                    ));
+                    let _ = ipc_tx.send(IpcRequest::Write(
+                        json!({"command": ["get_property", "audio-codec"], "request_id": 5}).to_string()
                     ));
                 }
             }
@@ -244,6 +248,16 @@ async fn read_loop(
                 3 => {
                     if let Some(paused) = value.as_bool() {
                         let _ = event_tx.send(PlayerEvent::Paused(paused));
+                    }
+                }
+                4 => {
+                    if let Some(rate) = value.get("samplerate").and_then(|v| v.as_u64()) {
+                        let _ = event_tx.send(PlayerEvent::SampleRate(rate as u32));
+                    }
+                }
+                5 => {
+                    if let Some(codec) = value.as_str() {
+                        let _ = event_tx.send(PlayerEvent::Codec(codec.to_owned()));
                     }
                 }
                 _ => {}

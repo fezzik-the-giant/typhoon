@@ -30,14 +30,6 @@ impl Tab {
         }
     }
 
-    pub fn index(self) -> usize {
-        match self {
-            Tab::Favorites => 0,
-            Tab::Artists => 1,
-            Tab::Playlists => 2,
-            Tab::Search => 3,
-        }
-    }
 }
 
 // ── StatefulList ──────────────────────────────────────────────────────────────
@@ -97,14 +89,6 @@ impl<T> StatefulList<T> {
         self.loading = false;
     }
 
-    pub fn reset(&mut self) {
-        self.items.clear();
-        self.selected = 0;
-        self.loading = false;
-        self.exhausted = false;
-        self.next_offset = 0;
-        self.total = 0;
-    }
 }
 
 // ── Artist detail ─────────────────────────────────────────────────────────────
@@ -291,6 +275,8 @@ pub struct NowPlaying {
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,
+    pub sample_rate: Option<u32>,
+    pub codec: Option<String>,
 }
 
 impl Default for NowPlaying {
@@ -309,6 +295,8 @@ impl Default for NowPlaying {
             lyrics_synced: Vec::new(),
             lyrics_plain: Vec::new(),
             lyrics_loading: false,
+            sample_rate: None,
+            codec: None,
         }
     }
 }
@@ -481,6 +469,14 @@ impl App {
                 }
             }
 
+            ApiResponse::AlbumLoaded { album } => {
+                if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
+                    if detail.album.id == album.id {
+                        detail.album = album;
+                    }
+                }
+            }
+
             ApiResponse::AlbumTracks { album_id, tracks } => {
                 if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
                     if detail.album.id == album_id {
@@ -582,6 +578,8 @@ impl App {
             PlayerEvent::TrackStarted => {
                 self.now_playing.active = true;
                 self.now_playing.paused = false;
+                self.now_playing.sample_rate = None;
+                self.now_playing.codec = None;
                 if let Some(track) = &self.now_playing.track {
                     let title = format!("{} — {}", track.artist_name(), track.title);
                     let _ = self.player_tx.send(PlayerCmd::SetMediaTitle(title));
@@ -617,7 +615,12 @@ impl App {
                 self.now_playing.paused = p;
                 self.push_mpris_state();
             }
-            PlayerEvent::Volume(_) => {}
+            PlayerEvent::SampleRate(r) => {
+                self.now_playing.sample_rate = Some(r);
+            }
+            PlayerEvent::Codec(c) => {
+                self.now_playing.codec = Some(c);
+            }
             PlayerEvent::Error(e) => {
                 self.status = Some((format!("Player: {e}"), StatusLevel::Error));
             }
@@ -882,6 +885,7 @@ impl App {
                 art_loading: has_cover,
                 art_cache: std::cell::RefCell::new(None),
             }));
+            let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
             let _ = self.api_tx.send(ApiRequest::LoadAlbumTracks { album_id });
             if let Some(cover_id) = cover {
                 let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id });

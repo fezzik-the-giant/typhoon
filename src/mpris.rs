@@ -8,7 +8,7 @@ use zbus::{connection, interface};
 use zbus::zvariant::{Array, ObjectPath, OwnedValue, Signature, Str, Value};
 
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
-const BUS_NAME: &str = "org.mpris.MediaPlayer2.typhoon";
+const BUS_NAME: &str = "org.mpris.MediaPlayer2.riptide";
 
 // ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ impl RootIface {
     fn has_track_list(&self) -> bool { false }
 
     #[zbus(property)]
-    fn identity(&self) -> &str { "Typhoon" }
+    fn identity(&self) -> &str { "Riptide" }
 
     #[zbus(property)]
     fn supported_uri_schemes(&self) -> Vec<String> { vec![] }
@@ -148,7 +148,7 @@ fn str_array_value(items: &[&str]) -> OwnedValue {
 fn build_metadata(s: &MprisState) -> HashMap<String, OwnedValue> {
     let mut map = HashMap::new();
 
-    let path: ObjectPath<'static> = ObjectPath::try_from("/org/typhoon/track/current").unwrap();
+    let path: ObjectPath<'static> = ObjectPath::try_from("/org/riptide/track/current").unwrap();
     map.insert(
         "mpris:trackid".into(),
         OwnedValue::try_from(Value::ObjectPath(path)).unwrap(),
