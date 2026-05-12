@@ -395,6 +395,10 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
 
 fn handle_search_input(app: &mut App, key: KeyEvent) {
     match key.code {
+        KeyCode::Tab => {
+            app.search.active = false;
+            app.next_tab();
+        }
         KeyCode::Esc => {
             // Close overlay, stay on current view.
             app.search.active = false;
