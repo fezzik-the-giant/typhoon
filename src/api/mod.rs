@@ -29,6 +29,12 @@ pub enum ApiRequest {
     Search { query: String },
     ResolveStreamUrl { track_id: u64 },
     FetchLyrics { track_id: u64 },
+    FavoriteTrack { track_id: u64 },
+    FollowArtist { artist_id: u64 },
+    UnfavoriteTrack { track_id: u64 },
+    UnfollowArtist { artist_id: u64 },
+    TrackRadio { track_id: u64 },
+    ArtistRadio { artist_id: u64 },
 }
 
 #[derive(Debug)]
@@ -53,6 +59,11 @@ pub enum ApiResponse {
         /// Plain-text lines, used only when `synced` is empty.
         plain: Vec<String>,
     },
+    FavoriteAdded,
+    ArtistFollowed,
+    FavoriteRemoved { track_id: u64 },
+    ArtistUnfollowed { artist_id: u64 },
+    RadioTracks { tracks: Vec<Track> },
     Error(String),
 }
 
@@ -191,6 +202,36 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
                 Err(e) => ApiResponse::Error(e.to_string()),
             }
         }
+
+        ApiRequest::FavoriteTrack { track_id } => match client.add_favorite_track(track_id).await {
+            Ok(()) => ApiResponse::FavoriteAdded,
+            Err(e) => ApiResponse::Error(format!("favorite: {e}")),
+        },
+
+        ApiRequest::FollowArtist { artist_id } => match client.follow_artist(artist_id).await {
+            Ok(()) => ApiResponse::ArtistFollowed,
+            Err(e) => ApiResponse::Error(format!("follow: {e}")),
+        },
+
+        ApiRequest::UnfavoriteTrack { track_id } => match client.remove_favorite_track(track_id).await {
+            Ok(()) => ApiResponse::FavoriteRemoved { track_id },
+            Err(e) => ApiResponse::Error(format!("unfavorite: {e}")),
+        },
+
+        ApiRequest::UnfollowArtist { artist_id } => match client.unfollow_artist(artist_id).await {
+            Ok(()) => ApiResponse::ArtistUnfollowed { artist_id },
+            Err(e) => ApiResponse::Error(format!("unfollow: {e}")),
+        },
+
+        ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id, 25).await {
+            Ok(page) => ApiResponse::RadioTracks { tracks: page.items },
+            Err(e) => ApiResponse::Error(format!("radio: {e}")),
+        },
+
+        ApiRequest::ArtistRadio { artist_id } => match client.get_artist_radio(artist_id, 25).await {
+            Ok(page) => ApiResponse::RadioTracks { tracks: page.items },
+            Err(e) => ApiResponse::Error(format!("radio: {e}")),
+        },
 
         ApiRequest::FetchLyrics { track_id } => {
             // A 404 (no lyrics) or any other error → return empty; never emit Error.

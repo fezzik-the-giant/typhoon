@@ -425,6 +425,7 @@ impl App {
         match resp {
             ApiResponse::Artists(items, total) => {
                 self.artists.append(items, total);
+                self.artists.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
             }
 
             ApiResponse::Playlists(items, total) => {
@@ -433,7 +434,13 @@ impl App {
 
             ApiResponse::Favorites(items, total) => {
                 let was_empty = self.favorites.items.is_empty();
-                self.favorites.append(items, total);
+                // Deduplicate: skip any track ID already in the list.
+                let existing_ids: std::collections::HashSet<u64> =
+                    self.favorites.items.iter().map(|t| t.id).collect();
+                let unique: Vec<Track> = items.into_iter()
+                    .filter(|t| !existing_ids.contains(&t.id))
+                    .collect();
+                self.favorites.append(unique, total);
                 // On first load, preview the first track: show its art in the sidebar
                 // without starting playback.
                 if was_empty && self.now_playing.track.is_none() {
@@ -442,6 +449,8 @@ impl App {
                         self.fetch_now_playing_metadata();
                     }
                 }
+                // Eagerly fetch remaining pages so the full list is available without scrolling.
+                self.load_favorites();
             }
 
             ApiResponse::ArtistTopTracks { artist_id, tracks } => {
@@ -565,6 +574,32 @@ impl App {
                 }
             }
 
+            ApiResponse::FavoriteAdded | ApiResponse::ArtistFollowed => {}
+
+            ApiResponse::FavoriteRemoved { track_id } => {
+                self.favorites.items.retain(|t| t.id != track_id);
+                self.favorites.total = self.favorites.total.saturating_sub(1);
+                self.favorites.selected = self.favorites.selected.min(
+                    self.favorites.items.len().saturating_sub(1)
+                );
+            }
+
+            ApiResponse::ArtistUnfollowed { artist_id } => {
+                self.artists.items.retain(|a| a.id != artist_id);
+                self.artists.total = self.artists.total.saturating_sub(1);
+                self.artists.selected = self.artists.selected.min(
+                    self.artists.items.len().saturating_sub(1)
+                );
+            }
+
+            ApiResponse::RadioTracks { tracks } => {
+                if tracks.is_empty() {
+                    self.status = Some(("No radio tracks available".to_string(), StatusLevel::Error));
+                } else {
+                    self.play_tracks(tracks, 0);
+                }
+            }
+
             ApiResponse::Error(msg) => {
                 self.status = Some((msg, StatusLevel::Error));
             }
@@ -630,12 +665,13 @@ impl App {
     // ── Playback ──────────────────────────────────────────────────────────────
 
     pub fn play_track(&mut self, track: Track) {
+        let id = track.id;
         self.now_playing.queue = vec![track.clone()];
         self.now_playing.queue_index = 0;
-        self.now_playing.track = Some(track.clone());
+        self.now_playing.track = Some(track);
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
-        let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+        let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
         self.fetch_now_playing_metadata();
         self.push_mpris_state();
     }
@@ -644,16 +680,61 @@ impl App {
         if tracks.is_empty() {
             return;
         }
-        self.now_playing.queue = tracks.clone();
-        self.now_playing.queue_index = start_index;
+        let track_id = tracks.get(start_index).map(|t| t.id);
         self.now_playing.track = tracks.get(start_index).cloned();
+        self.now_playing.queue = tracks;
+        self.now_playing.queue_index = start_index;
         self.now_playing.active = false;
         self.now_playing.position = 0.0;
-        if let Some(track) = tracks.get(start_index) {
-            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: track.id });
+        if let Some(id) = track_id {
+            let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
         self.fetch_now_playing_metadata();
         self.push_mpris_state();
+    }
+
+    pub fn favorite_track(&mut self, track: &Track) {
+        let _ = self.api_tx.send(ApiRequest::FavoriteTrack { track_id: track.id });
+        // Optimistically insert at top (list is newest-first); skip if already present.
+        if !self.favorites.items.iter().any(|t| t.id == track.id) {
+            self.favorites.items.insert(0, track.clone());
+            self.favorites.total = self.favorites.total.saturating_add(1);
+            self.favorites.selected = self.favorites.selected.saturating_add(1);
+        }
+        self.status = Some((format!("Added '{}' to favorites", track.title), StatusLevel::Info));
+    }
+
+    pub fn follow_artist(&mut self, artist: &Artist) {
+        let _ = self.api_tx.send(ApiRequest::FollowArtist { artist_id: artist.id });
+        if !self.artists.items.iter().any(|a| a.id == artist.id) {
+            let pos = self.artists.items.partition_point(|a| a.name.to_lowercase() < artist.name.to_lowercase());
+            self.artists.items.insert(pos, artist.clone());
+            self.artists.total = self.artists.total.saturating_add(1);
+            if pos <= self.artists.selected {
+                self.artists.selected = self.artists.selected.saturating_add(1);
+            }
+        }
+        self.status = Some((format!("Following {}", artist.name), StatusLevel::Info));
+    }
+
+    pub fn unfavorite_track(&mut self, track: &Track) {
+        let _ = self.api_tx.send(ApiRequest::UnfavoriteTrack { track_id: track.id });
+        self.status = Some((format!("Removed '{}' from favorites", track.title), StatusLevel::Info));
+    }
+
+    pub fn unfollow_artist(&mut self, artist: &Artist) {
+        let _ = self.api_tx.send(ApiRequest::UnfollowArtist { artist_id: artist.id });
+        self.status = Some((format!("Unfollowed {}", artist.name), StatusLevel::Info));
+    }
+
+    pub fn start_track_radio(&mut self, track: &Track) {
+        let _ = self.api_tx.send(ApiRequest::TrackRadio { track_id: track.id });
+        self.status = Some((format!("Loading radio for '{}'…", track.title), StatusLevel::Info));
+    }
+
+    pub fn start_artist_radio(&mut self, artist: &Artist) {
+        let _ = self.api_tx.send(ApiRequest::ArtistRadio { artist_id: artist.id });
+        self.status = Some((format!("Loading radio for {}…", artist.name), StatusLevel::Info));
     }
 
     pub fn add_to_queue(&mut self, track: Track) {

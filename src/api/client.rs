@@ -82,6 +82,30 @@ impl ApiClient {
     }
 
 
+    async fn post_form(&self, path: &str, form: &[(&str, String)]) -> Result<()> {
+        let token = self.token.read().await.clone();
+        let url = format!("{BASE}{path}");
+
+        let mut all_params: Vec<(&str, String)> = vec![
+            ("countryCode", self.config.country_code.clone()),
+        ];
+        if let Some(sid) = &self.config.session_id {
+            all_params.push(("sessionId", sid.clone()));
+        }
+
+        self.http
+            .post(&url)
+            .bearer_auth(&token)
+            .header("x-tidal-client-version", CLIENT_VERSION)
+            .query(&all_params)
+            .form(form)
+            .send()
+            .await
+            .context("HTTP POST failed")?
+            .error_for_status()?;
+        Ok(())
+    }
+
     fn uid(&self) -> Result<u64> {
         self.config.user_id.context("user_id not set — re-run to re-authenticate")
     }
@@ -154,6 +178,8 @@ impl ApiClient {
             &[
                 ("limit", limit.to_string()),
                 ("offset", offset.to_string()),
+                ("order", "DATE".to_string()),
+                ("orderDirection", "DESC".to_string()),
             ],
         )
         .await
@@ -187,6 +213,24 @@ impl ApiClient {
         .await
     }
 
+    // ── Radio ─────────────────────────────────────────────────────────────────
+
+    pub async fn get_track_radio(&self, track_id: u64, limit: u32) -> Result<Page<Track>> {
+        self.get(
+            &format!("/tracks/{track_id}/radio"),
+            &[("limit", limit.to_string())],
+        )
+        .await
+    }
+
+    pub async fn get_artist_radio(&self, artist_id: u64, limit: u32) -> Result<Page<Track>> {
+        self.get(
+            &format!("/artists/{artist_id}/radio"),
+            &[("limit", limit.to_string())],
+        )
+        .await
+    }
+
     // ── Lyrics ───────────────────────────────────────────────────────────────
 
     pub async fn get_track_lyrics(&self, track_id: u64) -> Result<LyricsResponse> {
@@ -198,6 +242,55 @@ impl ApiClient {
     /// Fetch raw bytes from a public URL (e.g. Tidal's cover art CDN).
     pub async fn fetch_bytes(&self, url: &str) -> Result<Vec<u8>> {
         Ok(self.http.get(url).send().await?.error_for_status()?.bytes().await?.to_vec())
+    }
+
+    async fn delete(&self, path: &str) -> Result<()> {
+        let token = self.token.read().await.clone();
+        let url = format!("{BASE}{path}");
+
+        let mut all_params: Vec<(&str, String)> = vec![
+            ("countryCode", self.config.country_code.clone()),
+        ];
+        if let Some(sid) = &self.config.session_id {
+            all_params.push(("sessionId", sid.clone()));
+        }
+
+        self.http
+            .delete(&url)
+            .bearer_auth(&token)
+            .header("x-tidal-client-version", CLIENT_VERSION)
+            .query(&all_params)
+            .send()
+            .await
+            .context("HTTP DELETE failed")?
+            .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn add_favorite_track(&self, track_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.post_form(
+            &format!("/users/{uid}/favorites/tracks"),
+            &[("trackId", track_id.to_string())],
+        ).await
+    }
+
+    pub async fn follow_artist(&self, artist_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.post_form(
+            &format!("/users/{uid}/favorites/artists"),
+            &[("artistId", artist_id.to_string())],
+        ).await
+    }
+
+    pub async fn remove_favorite_track(&self, track_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.delete(&format!("/users/{uid}/favorites/tracks/{track_id}")).await
+    }
+
+    pub async fn unfollow_artist(&self, artist_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.delete(&format!("/users/{uid}/favorites/artists/{artist_id}")).await
     }
 
     pub async fn get_stream_url(&self, track_id: u64) -> Result<String> {

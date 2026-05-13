@@ -209,6 +209,12 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         PlayTracks(Vec<crate::api::models::Track>, usize),
         OpenAlbum,
         AddToQueue(crate::api::models::Track),
+        FavoriteTrack(crate::api::models::Track),
+        FollowArtist(crate::api::models::Artist),
+        UnfavoriteTrack(crate::api::models::Track),
+        UnfollowArtist(crate::api::models::Artist),
+        TrackRadio(crate::api::models::Track),
+        ArtistRadio(crate::api::models::Artist),
     }
 
     let action: Action = if let Some(view) = app.view_stack.last_mut() {
@@ -268,6 +274,27 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                             None => return,
                         }
                     }
+                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Tracks => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::FavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('f') => Action::FollowArtist(detail.artist.clone()),
+                    KeyCode::Char('d') if detail.focus == ArtistDetailFocus::Tracks => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::UnfavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('d') => Action::UnfollowArtist(detail.artist.clone()),
+                    KeyCode::Char('r') if detail.focus == ArtistDetailFocus::Tracks => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::TrackRadio(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('r') => Action::ArtistRadio(detail.artist.clone()),
                     _ => return,
                 }
             }
@@ -283,6 +310,24 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                     KeyCode::Char('a') => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
                             Some(t) => Action::AddToQueue(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('f') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::FavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('d') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::UnfavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::TrackRadio(t),
                             None => return,
                         }
                     }
@@ -304,6 +349,24 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                             None => return,
                         }
                     }
+                    KeyCode::Char('f') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::FavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('d') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::UnfavoriteTrack(t),
+                            None => return,
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
+                            Some(t) => Action::TrackRadio(t),
+                            None => return,
+                        }
+                    }
                     _ => return,
                 }
             }
@@ -317,6 +380,12 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         Action::PlayTracks(tracks, idx) => { app.play_tracks(tracks, idx); return; }
         Action::OpenAlbum => { kitty_delete_album_art(); kitty_delete_artist_art(); app.open_selected_album(); return; }
         Action::AddToQueue(track) => { app.add_to_queue(track); return; }
+        Action::FavoriteTrack(track) => { app.favorite_track(&track); return; }
+        Action::FollowArtist(artist) => { app.follow_artist(&artist); return; }
+        Action::UnfavoriteTrack(track) => { app.unfavorite_track(&track); return; }
+        Action::UnfollowArtist(artist) => { app.unfollow_artist(&artist); return; }
+        Action::TrackRadio(track) => { app.start_track_radio(&track); return; }
+        Action::ArtistRadio(artist) => { app.start_artist_radio(&artist); return; }
         Action::None => {}
     }
 
@@ -385,6 +454,75 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
                     app.add_to_queue(track);
+                }
+            }
+            _ => {}
+        },
+        KeyCode::Char('f') => match app.current_tab {
+            Tab::Artists => {
+                if let Some(artist) = app.artists.selected_item().cloned() {
+                    app.follow_artist(&artist);
+                }
+            }
+            Tab::Favorites => {
+                if let Some(track) = app.favorites.selected_item().cloned() {
+                    app.favorite_track(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Tracks => {
+                if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
+                    app.favorite_track(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Artists => {
+                if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
+                    app.follow_artist(&artist);
+                }
+            }
+            _ => {}
+        },
+        KeyCode::Char('d') => match app.current_tab {
+            Tab::Artists => {
+                if let Some(artist) = app.artists.selected_item().cloned() {
+                    app.unfollow_artist(&artist);
+                }
+            }
+            Tab::Favorites => {
+                if let Some(track) = app.favorites.selected_item().cloned() {
+                    app.unfavorite_track(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Tracks => {
+                if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
+                    app.unfavorite_track(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Artists => {
+                if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
+                    app.unfollow_artist(&artist);
+                }
+            }
+            _ => {}
+        },
+        KeyCode::Char('r') => match app.current_tab {
+            Tab::Artists => {
+                if let Some(artist) = app.artists.selected_item().cloned() {
+                    app.start_artist_radio(&artist);
+                }
+            }
+            Tab::Favorites => {
+                if let Some(track) = app.favorites.selected_item().cloned() {
+                    app.start_track_radio(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Tracks => {
+                if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
+                    app.start_track_radio(&track);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Artists => {
+                if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
+                    app.start_artist_radio(&artist);
                 }
             }
             _ => {}

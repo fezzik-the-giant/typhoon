@@ -1345,22 +1345,22 @@ fn render_keybinds(f: &mut Frame, app: &App, area: Rect) {
     } else if in_artist {
         &[
             ("↑↓", "navigate"), ("←→", "panels"), ("← on tracks", "bio"),
-            ("↵", "play/open"), ("a", "queue"),
+            ("↵", "play/open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"),
             ("esc", "back"), ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else if in_detail {
         &[
-            ("↑↓", "navigate"), ("↵", "play"), ("a", "queue"),
+            ("↑↓", "navigate"), ("↵", "play"), ("a", "queue"), ("f", "favorite"), ("d", "remove"), ("r", "radio"),
             ("esc", "back"), ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else if in_search_tab {
         &[
-            ("↑↓", "navigate"), ("tab/←→", "panes"), ("↵", "open"), ("a", "queue"),
+            ("↑↓", "navigate"), ("tab/←→", "panes"), ("↵", "open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"),
             ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else {
         &[
-            ("↑↓", "navigate"), ("↵", "open"), ("a", "queue"), ("→", "focus queue"),
+            ("↑↓", "navigate"), ("↵", "open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"), ("→", "focus queue"),
             ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     };

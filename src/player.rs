@@ -96,16 +96,30 @@ impl PlayerWorker {
                                 json!({"command": ["set_property", "pause", false]}).to_string()
                             ));
                         }
-                        other => {
-                            let msg = match other {
-                                PlayerCmd::Append(url)       => json!({"command": ["loadfile", url, "append"]}),
-                                PlayerCmd::TogglePause       => json!({"command": ["cycle", "pause"]}),
-                                PlayerCmd::Stop              => json!({"command": ["stop"]}),
-                                PlayerCmd::RemoveNext        => json!({"command": ["playlist-remove", 1]}),
-                                PlayerCmd::SetMediaTitle(t)  => json!({"command": ["set_property", "force-media-title", t]}),
-                                PlayerCmd::Play(_)           => unreachable!(),
-                            };
-                            let _ = ipc_tx.send(IpcRequest::Write(msg.to_string()));
+                        PlayerCmd::Append(url) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["loadfile", url, "append"]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::TogglePause => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["cycle", "pause"]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::Stop => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["stop"]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::RemoveNext => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["playlist-remove", 1]}).to_string()
+                            ));
+                        }
+                        PlayerCmd::SetMediaTitle(t) => {
+                            let _ = ipc_tx.send(IpcRequest::Write(
+                                json!({"command": ["set_property", "force-media-title", t]}).to_string()
+                            ));
                         }
                     }
                 }
