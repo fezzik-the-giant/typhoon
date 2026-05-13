@@ -57,6 +57,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.command.active {
         render_command_overlay(f, app, area);
     }
+
+    render_toast(f, app, area);
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -1251,13 +1253,6 @@ fn render_now_playing(f: &mut Frame, app: &App, area: Rect) {
         cols[2],
     );
 
-    if let Some((msg, level)) = &app.status {
-        let color = match level { StatusLevel::Error => Color::Red, StatusLevel::Info => Color::Green };
-        f.render_widget(
-            Paragraph::new(msg.as_str()).style(Style::default().fg(color)).alignment(Alignment::Right),
-            cols[2],
-        );
-    }
 }
 
 fn render_lyrics(f: &mut Frame, app: &App, area: Rect) {
@@ -1378,6 +1373,43 @@ fn render_keybinds(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
         area,
+    );
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+fn render_toast(f: &mut Frame, app: &App, area: Rect) {
+    let Some((msg, level, set_at)) = &app.status else { return };
+
+    let age = app.tick.wrapping_sub(*set_at);
+    // Fade out over the last ~1 s (62 ticks) of the 5 s lifetime (312 ticks).
+    let fading = age > 250;
+
+    let (border_color, text_color) = match level {
+        StatusLevel::Error => (Color::Red,  if fading { Color::DarkGray } else { Color::White }),
+        StatusLevel::Info  => (ACCENT,      if fading { Color::DarkGray } else { Color::White }),
+    };
+
+    // Size the card to the message, clamped to the terminal width.
+    let inner_w = msg.len() as u16 + 4; // 2 padding each side
+    let toast_w = inner_w.min(area.width.saturating_sub(4));
+    let toast_h = 3u16;
+    let x = area.x + area.width.saturating_sub(toast_w) / 2;
+    // Float just above the now-playing bar (last 10 rows).
+    let y = area.y + area.height.saturating_sub(toast_h + 10);
+    let toast_rect = Rect::new(x, y, toast_w, toast_h);
+
+    f.render_widget(Clear, toast_rect);
+    f.render_widget(
+        Paragraph::new(msg.as_str())
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(text_color))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(border_color)),
+            ),
+        toast_rect,
     );
 }
 

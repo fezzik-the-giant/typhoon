@@ -349,7 +349,8 @@ pub struct App {
     pub queue_cursor: usize,
 
     pub tick: u64,
-    pub status: Option<(String, StatusLevel)>,
+    /// (message, level, tick when set) — cleared automatically after ~5 s
+    pub status: Option<(String, StatusLevel, u64)>,
 
     pub api_tx: mpsc::UnboundedSender<ApiRequest>,
     pub player_tx: mpsc::UnboundedSender<PlayerCmd>,
@@ -594,14 +595,14 @@ impl App {
 
             ApiResponse::RadioTracks { tracks } => {
                 if tracks.is_empty() {
-                    self.status = Some(("No radio tracks available".to_string(), StatusLevel::Error));
+                    self.set_status("No radio tracks available".to_string(), StatusLevel::Error);
                 } else {
                     self.play_tracks(tracks, 0);
                 }
             }
 
             ApiResponse::Error(msg) => {
-                self.status = Some((msg, StatusLevel::Error));
+                self.set_status(msg, StatusLevel::Error);
             }
         }
     }
@@ -657,7 +658,7 @@ impl App {
                 self.now_playing.codec = Some(c);
             }
             PlayerEvent::Error(e) => {
-                self.status = Some((format!("Player: {e}"), StatusLevel::Error));
+                self.set_status(format!("Player: {e}"), StatusLevel::Error);
             }
         }
     }
@@ -701,7 +702,7 @@ impl App {
             self.favorites.total = self.favorites.total.saturating_add(1);
             self.favorites.selected = self.favorites.selected.saturating_add(1);
         }
-        self.status = Some((format!("Added '{}' to favorites", track.title), StatusLevel::Info));
+        self.set_status(format!("Added '{}' to favorites", track.title), StatusLevel::Info);
     }
 
     pub fn follow_artist(&mut self, artist: &Artist) {
@@ -714,27 +715,27 @@ impl App {
                 self.artists.selected = self.artists.selected.saturating_add(1);
             }
         }
-        self.status = Some((format!("Following {}", artist.name), StatusLevel::Info));
+        self.set_status(format!("Following {}", artist.name), StatusLevel::Info);
     }
 
     pub fn unfavorite_track(&mut self, track: &Track) {
         let _ = self.api_tx.send(ApiRequest::UnfavoriteTrack { track_id: track.id });
-        self.status = Some((format!("Removed '{}' from favorites", track.title), StatusLevel::Info));
+        self.set_status(format!("Removed '{}' from favorites", track.title), StatusLevel::Info);
     }
 
     pub fn unfollow_artist(&mut self, artist: &Artist) {
         let _ = self.api_tx.send(ApiRequest::UnfollowArtist { artist_id: artist.id });
-        self.status = Some((format!("Unfollowed {}", artist.name), StatusLevel::Info));
+        self.set_status(format!("Unfollowed {}", artist.name), StatusLevel::Info);
     }
 
     pub fn start_track_radio(&mut self, track: &Track) {
         let _ = self.api_tx.send(ApiRequest::TrackRadio { track_id: track.id });
-        self.status = Some((format!("Loading radio for '{}'…", track.title), StatusLevel::Info));
+        self.set_status(format!("Loading radio for '{}'…", track.title), StatusLevel::Info);
     }
 
     pub fn start_artist_radio(&mut self, artist: &Artist) {
         let _ = self.api_tx.send(ApiRequest::ArtistRadio { artist_id: artist.id });
-        self.status = Some((format!("Loading radio for {}…", artist.name), StatusLevel::Info));
+        self.set_status(format!("Loading radio for {}…", artist.name), StatusLevel::Info);
     }
 
     pub fn add_to_queue(&mut self, track: Track) {
@@ -751,7 +752,7 @@ impl App {
             let id = self.now_playing.queue[new_idx].id;
             let _ = self.api_tx.send(ApiRequest::ResolveStreamUrl { track_id: id });
         }
-        self.status = Some((format!("Queued: {title}"), StatusLevel::Info));
+        self.set_status(format!("Queued: {title}"), StatusLevel::Info);
     }
 
     pub fn focus_queue(&mut self) {
@@ -1028,5 +1029,15 @@ impl App {
 
     pub fn tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
+        // ~5 s at 16 ms/tick = 312 ticks
+        if let Some((_, _, set_at)) = self.status {
+            if self.tick.wrapping_sub(set_at) > 312 {
+                self.status = None;
+            }
+        }
+    }
+
+    fn set_status(&mut self, msg: String, level: StatusLevel) {
+        self.status = Some((msg, level, self.tick));
     }
 }
