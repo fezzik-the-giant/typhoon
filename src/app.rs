@@ -718,6 +718,14 @@ impl App {
         self.set_status(format!("Following {}", artist.name), StatusLevel::Info);
     }
 
+    pub fn toggle_favorite_track(&mut self, track: &Track) {
+        if self.favorites.items.iter().any(|t| t.id == track.id) {
+            self.unfavorite_track(track);
+        } else {
+            self.favorite_track(track);
+        }
+    }
+
     pub fn unfavorite_track(&mut self, track: &Track) {
         let _ = self.api_tx.send(ApiRequest::UnfavoriteTrack { track_id: track.id });
         self.set_status(format!("Removed '{}' from favorites", track.title), StatusLevel::Info);

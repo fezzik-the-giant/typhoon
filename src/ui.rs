@@ -1327,7 +1327,7 @@ fn render_keybinds(f: &mut Frame, app: &App, area: Rect) {
     let in_search_tab = app.current_tab == Tab::Search && !in_detail;
 
     let hints: &[(&str, &str)] = if app.queue_focused {
-        &[("↑↓", "navigate"), ("↵", "play from"), ("d", "remove"), ("←/esc", "back"), ("spc", "pause")]
+        &[("↑↓", "navigate"), ("↵", "play from"), ("f", "favorite"), ("d", "remove"), ("←/esc", "back"), ("spc", "pause")]
     } else if app.command.active {
         &[("↑↓", "select"), ("tab", "complete"), ("↵", "go"), ("esc", "cancel")]
     } else if app.search.active {
