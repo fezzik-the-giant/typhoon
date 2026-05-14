@@ -18,6 +18,7 @@ pub enum ApiRequest {
     LoadArtists { offset: u32 },
     LoadPlaylists { offset: u32 },
     LoadFavorites { offset: u32 },
+    LoadFavAlbums { offset: u32 },
     LoadArtistTopTracks { artist_id: u64 },
     LoadArtistAlbums { artist_id: u64 },
     LoadArtistBio { artist_id: u64 },
@@ -33,6 +34,8 @@ pub enum ApiRequest {
     FollowArtist { artist_id: u64 },
     UnfavoriteTrack { track_id: u64 },
     UnfollowArtist { artist_id: u64 },
+    FavoriteAlbum { album_id: u64 },
+    UnfavoriteAlbum { album_id: u64 },
     TrackRadio { track_id: u64 },
     ArtistRadio { artist_id: u64 },
 }
@@ -63,6 +66,9 @@ pub enum ApiResponse {
     ArtistFollowed,
     FavoriteRemoved { track_id: u64 },
     ArtistUnfollowed { artist_id: u64 },
+    FavAlbums(Vec<Album>, u32),
+    AlbumFavorited,
+    AlbumUnfavorited { album_id: u64 },
     RadioTracks { tracks: Vec<Track> },
     Error(String),
 }
@@ -113,6 +119,14 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
 
         ApiRequest::LoadPlaylists { offset } => match client.get_user_playlists(offset, 50).await {
             Ok(page) => ApiResponse::Playlists(page.items, page.total),
+            Err(e) => ApiResponse::Error(e.to_string()),
+        },
+
+        ApiRequest::LoadFavAlbums { offset } => match client.get_favorite_albums(offset, 50).await {
+            Ok(page) => {
+                let albums = page.items.into_iter().map(|e| e.item).collect();
+                ApiResponse::FavAlbums(albums, page.total)
+            }
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
@@ -221,6 +235,16 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         ApiRequest::UnfollowArtist { artist_id } => match client.unfollow_artist(artist_id).await {
             Ok(()) => ApiResponse::ArtistUnfollowed { artist_id },
             Err(e) => ApiResponse::Error(format!("unfollow: {e}")),
+        },
+
+        ApiRequest::FavoriteAlbum { album_id } => match client.add_favorite_album(album_id).await {
+            Ok(()) => ApiResponse::AlbumFavorited,
+            Err(e) => ApiResponse::Error(format!("favorite album: {e}")),
+        },
+
+        ApiRequest::UnfavoriteAlbum { album_id } => match client.remove_favorite_album(album_id).await {
+            Ok(()) => ApiResponse::AlbumUnfavorited { album_id },
+            Err(e) => ApiResponse::Error(format!("unfavorite album: {e}")),
         },
 
         ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id, 25).await {

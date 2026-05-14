@@ -74,6 +74,11 @@ impl Album {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FavoriteAlbumEntry {
+    pub item: Album,
+}
+
 // ── Tracks ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Clone)]

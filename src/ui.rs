@@ -337,6 +337,7 @@ fn render_content(f: &mut Frame, app: &App, area: Rect) {
 
     match app.current_tab {
         Tab::Artists => render_artist_list(f, app, area),
+        Tab::Albums => render_fav_albums_list(f, app, area),
         Tab::Playlists => render_playlist_list(f, app, area),
         Tab::Favorites => render_track_list(
             f, app,
@@ -394,6 +395,69 @@ fn render_artist_list(f: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items);
     f.render_widget(list, inner);
+}
+
+// ── Saved albums list ─────────────────────────────────────────────────────────
+
+fn render_fav_albums_list(f: &mut Frame, app: &App, area: Rect) {
+    let loading = app.fav_albums.loading && app.fav_albums.items.is_empty();
+    let spinner = spinner_char(app.tick);
+
+    let block = Block::default()
+        .title(if loading {
+            format!(" Albums {spinner} ")
+        } else {
+            format!(" Albums ({}) ", app.fav_albums.total)
+        })
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(ACCENT));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if app.fav_albums.items.is_empty() && !loading {
+        f.render_widget(
+            Paragraph::new("No saved albums found.")
+                .style(Style::default().fg(DIM))
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    }
+
+    let height = inner.height as usize;
+    let selected = app.fav_albums.selected;
+    let offset = scroll_offset(selected, height);
+
+    let items: Vec<ListItem> = app.fav_albums.items
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(height)
+        .map(|(idx, album)| {
+            let is_sel = idx == selected;
+            let bg = if is_sel { HIGHLIGHT_BG } else { Color::Reset };
+            let prefix = if is_sel { "▶ " } else { "  " };
+            let artist = album.artist.as_ref().map(|a| a.name.as_str()).unwrap_or("");
+            let badge = album.quality_badge().map(|b| format!(" [{b}]")).unwrap_or_default();
+
+            let title_style = Style::default()
+                .bg(bg)
+                .fg(Color::White)
+                .add_modifier(if is_sel { Modifier::BOLD } else { Modifier::empty() });
+            let sub_style = Style::default().bg(bg).fg(DIM);
+            let badge_style = Style::default().bg(bg).fg(ACCENT).add_modifier(Modifier::BOLD);
+
+            let line = Line::from(vec![
+                Span::styled(format!("{prefix}{}", album.title), title_style),
+                Span::styled(if artist.is_empty() { String::new() } else { format!("  {artist}") }, sub_style),
+                Span::styled(badge, badge_style),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    f.render_widget(List::new(items), inner);
 }
 
 // ── Artist detail (tracks + albums split) ─────────────────────────────────────
@@ -1325,6 +1389,7 @@ fn render_keybinds(f: &mut Frame, app: &App, area: Rect) {
         false
     };
     let in_search_tab = app.current_tab == Tab::Search && !in_detail;
+    let in_albums_tab = app.current_tab == Tab::Albums && !in_detail;
 
     let hints: &[(&str, &str)] = if app.queue_focused {
         &[("↑↓", "navigate"), ("↵", "play from"), ("f", "favorite"), ("d", "remove"), ("←/esc", "back"), ("spc", "pause")]
@@ -1337,25 +1402,30 @@ fn render_keybinds(f: &mut Frame, app: &App, area: Rect) {
             ("↑↓", "scroll"), ("→", "tracks"), ("esc", "back"),
             ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
+    } else if in_albums_tab {
+        &[
+            ("↑↓", "navigate"), ("↵", "open"), ("f", "toggle saved"), ("→", "focus queue"),
+            ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
+        ]
     } else if in_artist {
         &[
             ("↑↓", "navigate"), ("←→", "panels"), ("← on tracks", "bio"),
-            ("↵", "play/open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"),
+            ("↵", "play/open"), ("a", "queue"), ("f", "toggle fav/follow"), ("r", "radio"),
             ("esc", "back"), ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else if in_detail {
         &[
-            ("↑↓", "navigate"), ("↵", "play"), ("a", "queue"), ("f", "favorite"), ("d", "remove"), ("r", "radio"),
+            ("↑↓", "navigate"), ("↵", "play"), ("a", "queue"), ("f", "toggle favorite"), ("r", "radio"),
             ("esc", "back"), ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else if in_search_tab {
         &[
-            ("↑↓", "navigate"), ("tab/←→", "panes"), ("↵", "open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"),
+            ("↑↓", "navigate"), ("tab/←→", "panes"), ("↵", "open"), ("a", "queue"), ("f", "toggle fav/follow"), ("r", "radio"),
             ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     } else {
         &[
-            ("↑↓", "navigate"), ("↵", "open"), ("a", "queue"), ("f", "favorite/follow"), ("d", "remove"), ("r", "radio"), ("→", "focus queue"),
+            ("↑↓", "navigate"), ("↵", "open"), ("a", "queue"), ("f", "toggle fav/follow"), ("r", "radio"), ("→", "focus queue"),
             ("spc", "pause"), ("n/p", "next/prev"), ("/", "command"), ("q", "quit"),
         ]
     };

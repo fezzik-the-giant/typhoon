@@ -171,6 +171,33 @@ impl ApiClient {
 
     // ── Favorites ─────────────────────────────────────────────────────────────
 
+    pub async fn get_favorite_albums(&self, offset: u32, limit: u32) -> Result<Page<FavoriteAlbumEntry>> {
+        let uid = self.uid()?;
+        self.get(
+            &format!("/users/{uid}/favorites/albums"),
+            &[
+                ("limit", limit.to_string()),
+                ("offset", offset.to_string()),
+                ("order", "DATE".to_string()),
+                ("orderDirection", "DESC".to_string()),
+            ],
+        )
+        .await
+    }
+
+    pub async fn add_favorite_album(&self, album_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.post_form(
+            &format!("/users/{uid}/favorites/albums"),
+            &[("albumId", album_id.to_string())],
+        ).await
+    }
+
+    pub async fn remove_favorite_album(&self, album_id: u64) -> Result<()> {
+        let uid = self.uid()?;
+        self.delete(&format!("/users/{uid}/favorites/albums/{album_id}")).await
+    }
+
     pub async fn get_favorite_tracks(&self, offset: u32, limit: u32) -> Result<Page<FavoriteTrackEntry>> {
         let uid = self.uid()?;
         self.get(

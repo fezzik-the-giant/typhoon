@@ -13,18 +13,20 @@ use crate::player::{PlayerCmd, PlayerEvent};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Artists,
+    Albums,
     Playlists,
     Favorites,
     Search,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 4] = [Tab::Favorites, Tab::Artists, Tab::Playlists, Tab::Search];
+    pub const ALL: [Tab; 5] = [Tab::Favorites, Tab::Artists, Tab::Albums, Tab::Playlists, Tab::Search];
 
     pub fn title(self) -> &'static str {
         match self {
             Tab::Favorites => "Favorites",
             Tab::Artists => "Artists",
+            Tab::Albums => "Albums",
             Tab::Playlists => "Playlists",
             Tab::Search => "Search",
         }
@@ -247,7 +249,7 @@ impl Default for CommandState {
 
 impl CommandState {
     pub const COMMANDS: &'static [&'static str] =
-        &["favorites", "artists", "playlists", "search"];
+        &["favorites", "artists", "albums", "playlists", "search"];
 
     pub fn matches(&self) -> Vec<&'static str> {
         let q = self.input.to_lowercase();
@@ -339,6 +341,7 @@ pub struct App {
     pub view_stack: Vec<View>,
 
     pub artists: StatefulList<Artist>,
+    pub fav_albums: StatefulList<Album>,
     pub playlists: StatefulList<Playlist>,
     pub favorites: StatefulList<Track>,
     pub search: SearchState,
@@ -368,6 +371,7 @@ impl App {
             current_tab: Tab::Favorites,
             view_stack: Vec::new(),
             artists: StatefulList::default(),
+            fav_albums: StatefulList::default(),
             playlists: StatefulList::default(),
             favorites: StatefulList::default(),
             search: SearchState::default(),
@@ -383,6 +387,7 @@ impl App {
         };
         // Kick off initial data loads
         app.load_artists();
+        app.load_fav_albums();
         app.load_playlists();
         app.load_favorites();
         app
@@ -397,6 +402,16 @@ impl App {
         self.artists.loading = true;
         let _ = self.api_tx.send(ApiRequest::LoadArtists {
             offset: self.artists.next_offset,
+        });
+    }
+
+    pub fn load_fav_albums(&mut self) {
+        if self.fav_albums.loading || self.fav_albums.exhausted {
+            return;
+        }
+        self.fav_albums.loading = true;
+        let _ = self.api_tx.send(ApiRequest::LoadFavAlbums {
+            offset: self.fav_albums.next_offset,
         });
     }
 
@@ -427,6 +442,25 @@ impl App {
             ApiResponse::Artists(items, total) => {
                 self.artists.append(items, total);
                 self.artists.items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            }
+
+            ApiResponse::FavAlbums(items, total) => {
+                let existing_ids: std::collections::HashSet<u64> =
+                    self.fav_albums.items.iter().map(|a| a.id).collect();
+                let unique: Vec<Album> = items.into_iter()
+                    .filter(|a| !existing_ids.contains(&a.id))
+                    .collect();
+                self.fav_albums.append(unique, total);
+                self.load_fav_albums();
+            }
+
+            ApiResponse::AlbumFavorited => {}
+
+            ApiResponse::AlbumUnfavorited { album_id } => {
+                self.fav_albums.items.retain(|a| a.id != album_id);
+                self.fav_albums.total = self.fav_albums.total.saturating_sub(1);
+                self.fav_albums.selected = self.fav_albums.selected
+                    .min(self.fav_albums.items.len().saturating_sub(1));
             }
 
             ApiResponse::Playlists(items, total) => {
@@ -694,7 +728,7 @@ impl App {
         self.push_mpris_state();
     }
 
-    pub fn favorite_track(&mut self, track: &Track) {
+    fn favorite_track(&mut self, track: &Track) {
         let _ = self.api_tx.send(ApiRequest::FavoriteTrack { track_id: track.id });
         // Optimistically insert at top (list is newest-first); skip if already present.
         if !self.favorites.items.iter().any(|t| t.id == track.id) {
@@ -705,7 +739,7 @@ impl App {
         self.set_status(format!("Added '{}' to favorites", track.title), StatusLevel::Info);
     }
 
-    pub fn follow_artist(&mut self, artist: &Artist) {
+    fn follow_artist(&mut self, artist: &Artist) {
         let _ = self.api_tx.send(ApiRequest::FollowArtist { artist_id: artist.id });
         if !self.artists.items.iter().any(|a| a.id == artist.id) {
             let pos = self.artists.items.partition_point(|a| a.name.to_lowercase() < artist.name.to_lowercase());
@@ -726,12 +760,43 @@ impl App {
         }
     }
 
-    pub fn unfavorite_track(&mut self, track: &Track) {
+    pub fn toggle_follow_artist(&mut self, artist: &Artist) {
+        if self.artists.items.iter().any(|a| a.id == artist.id) {
+            self.unfollow_artist(artist);
+        } else {
+            self.follow_artist(artist);
+        }
+    }
+
+    fn favorite_album(&mut self, album: &Album) {
+        let _ = self.api_tx.send(ApiRequest::FavoriteAlbum { album_id: album.id });
+        if !self.fav_albums.items.iter().any(|a| a.id == album.id) {
+            self.fav_albums.items.insert(0, album.clone());
+            self.fav_albums.total = self.fav_albums.total.saturating_add(1);
+            self.fav_albums.selected = self.fav_albums.selected.saturating_add(1);
+        }
+        self.set_status(format!("Added '{}' to albums", album.title), StatusLevel::Info);
+    }
+
+    fn unfavorite_album(&mut self, album: &Album) {
+        let _ = self.api_tx.send(ApiRequest::UnfavoriteAlbum { album_id: album.id });
+        self.set_status(format!("Removed '{}' from albums", album.title), StatusLevel::Info);
+    }
+
+    pub fn toggle_favorite_album(&mut self, album: &Album) {
+        if self.fav_albums.items.iter().any(|a| a.id == album.id) {
+            self.unfavorite_album(album);
+        } else {
+            self.favorite_album(album);
+        }
+    }
+
+    fn unfavorite_track(&mut self, track: &Track) {
         let _ = self.api_tx.send(ApiRequest::UnfavoriteTrack { track_id: track.id });
         self.set_status(format!("Removed '{}' from favorites", track.title), StatusLevel::Info);
     }
 
-    pub fn unfollow_artist(&mut self, artist: &Artist) {
+    fn unfollow_artist(&mut self, artist: &Artist) {
         let _ = self.api_tx.send(ApiRequest::UnfollowArtist { artist_id: artist.id });
         self.set_status(format!("Unfollowed {}", artist.name), StatusLevel::Info);
     }
@@ -927,7 +992,8 @@ impl App {
     pub fn next_tab(&mut self) {
         self.current_tab = match self.current_tab {
             Tab::Favorites => Tab::Artists,
-            Tab::Artists => Tab::Playlists,
+            Tab::Artists => Tab::Albums,
+            Tab::Albums => Tab::Playlists,
             Tab::Playlists => Tab::Search,
             Tab::Search => Tab::Favorites,
         };
@@ -966,6 +1032,24 @@ impl App {
         self.open_artist(artist);
     }
 
+    pub fn open_album(&mut self, album: Album) {
+        let album_id = album.id;
+        let cover = album.cover.clone();
+        let has_cover = cover.is_some();
+        self.view_stack.push(View::AlbumDetail(AlbumDetail {
+            album,
+            tracks: StatefulList::default(),
+            art_bytes: None,
+            art_loading: has_cover,
+            art_cache: std::cell::RefCell::new(None),
+        }));
+        let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
+        let _ = self.api_tx.send(ApiRequest::LoadAlbumTracks { album_id });
+        if let Some(cover_id) = cover {
+            let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id });
+        }
+    }
+
     pub fn open_selected_album(&mut self) {
         let album = if let Some(View::ArtistDetail(detail)) = self.view_stack.last() {
             detail.albums.selected_item().cloned()
@@ -973,21 +1057,13 @@ impl App {
             None
         };
         if let Some(album) = album {
-            let album_id = album.id;
-            let cover = album.cover.clone();
-            let has_cover = cover.is_some();
-            self.view_stack.push(View::AlbumDetail(AlbumDetail {
-                album,
-                tracks: StatefulList::default(),
-                art_bytes: None,
-                art_loading: has_cover,
-                art_cache: std::cell::RefCell::new(None),
-            }));
-            let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
-            let _ = self.api_tx.send(ApiRequest::LoadAlbumTracks { album_id });
-            if let Some(cover_id) = cover {
-                let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id });
-            }
+            self.open_album(album);
+        }
+    }
+
+    pub fn open_selected_fav_album(&mut self) {
+        if let Some(album) = self.fav_albums.selected_item().cloned() {
+            self.open_album(album);
         }
     }
 

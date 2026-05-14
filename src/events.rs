@@ -189,6 +189,10 @@ fn execute_command(app: &mut App, cmd: &str) {
             cleanup(app);
             app.set_tab(Tab::Artists);
         }
+        "albums" => {
+            cleanup(app);
+            app.set_tab(Tab::Albums);
+        }
         "playlists" => {
             cleanup(app);
             app.set_tab(Tab::Playlists);
@@ -209,10 +213,9 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         PlayTracks(Vec<crate::api::models::Track>, usize),
         OpenAlbum,
         AddToQueue(crate::api::models::Track),
-        FavoriteTrack(crate::api::models::Track),
-        FollowArtist(crate::api::models::Artist),
-        UnfavoriteTrack(crate::api::models::Track),
-        UnfollowArtist(crate::api::models::Artist),
+        ToggleFavoriteTrack(crate::api::models::Track),
+        ToggleFollowArtist(crate::api::models::Artist),
+        ToggleFavoriteAlbum(crate::api::models::Album),
         TrackRadio(crate::api::models::Track),
         ArtistRadio(crate::api::models::Artist),
     }
@@ -276,18 +279,17 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                     }
                     KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Tracks => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::FavoriteTrack(t),
+                            Some(t) => Action::ToggleFavoriteTrack(t),
                             None => return,
                         }
                     }
-                    KeyCode::Char('f') => Action::FollowArtist(detail.artist.clone()),
-                    KeyCode::Char('d') if detail.focus == ArtistDetailFocus::Tracks => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::UnfavoriteTrack(t),
+                    KeyCode::Char('f') if detail.focus == ArtistDetailFocus::Albums => {
+                        match detail.albums.items.get(detail.albums.selected).cloned() {
+                            Some(a) => Action::ToggleFavoriteAlbum(a),
                             None => return,
                         }
                     }
-                    KeyCode::Char('d') => Action::UnfollowArtist(detail.artist.clone()),
+                    KeyCode::Char('f') => Action::ToggleFollowArtist(detail.artist.clone()),
                     KeyCode::Char('r') if detail.focus == ArtistDetailFocus::Tracks => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
                             Some(t) => Action::TrackRadio(t),
@@ -315,13 +317,7 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                     }
                     KeyCode::Char('f') => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::FavoriteTrack(t),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('d') => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::UnfavoriteTrack(t),
+                            Some(t) => Action::ToggleFavoriteTrack(t),
                             None => return,
                         }
                     }
@@ -351,13 +347,7 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                     }
                     KeyCode::Char('f') => {
                         match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::FavoriteTrack(t),
-                            None => return,
-                        }
-                    }
-                    KeyCode::Char('d') => {
-                        match detail.tracks.items.get(detail.tracks.selected).cloned() {
-                            Some(t) => Action::UnfavoriteTrack(t),
+                            Some(t) => Action::ToggleFavoriteTrack(t),
                             None => return,
                         }
                     }
@@ -380,10 +370,9 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         Action::PlayTracks(tracks, idx) => { app.play_tracks(tracks, idx); return; }
         Action::OpenAlbum => { kitty_delete_album_art(); kitty_delete_artist_art(); app.open_selected_album(); return; }
         Action::AddToQueue(track) => { app.add_to_queue(track); return; }
-        Action::FavoriteTrack(track) => { app.favorite_track(&track); return; }
-        Action::FollowArtist(artist) => { app.follow_artist(&artist); return; }
-        Action::UnfavoriteTrack(track) => { app.unfavorite_track(&track); return; }
-        Action::UnfollowArtist(artist) => { app.unfollow_artist(&artist); return; }
+        Action::ToggleFavoriteTrack(track) => { app.toggle_favorite_track(&track); return; }
+        Action::ToggleFollowArtist(artist) => { app.toggle_follow_artist(&artist); return; }
+        Action::ToggleFavoriteAlbum(album) => { app.toggle_favorite_album(&album); return; }
         Action::TrackRadio(track) => { app.start_track_radio(&track); return; }
         Action::ArtistRadio(artist) => { app.start_artist_radio(&artist); return; }
         Action::None => {}
@@ -393,12 +382,14 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => match app.current_tab {
             Tab::Artists => app.artists.prev(),
+            Tab::Albums => app.fav_albums.prev(),
             Tab::Playlists => app.playlists.prev(),
             Tab::Favorites => app.favorites.prev(),
             Tab::Search => app.search.pane_prev(),
         },
         KeyCode::Down | KeyCode::Char('j') => match app.current_tab {
             Tab::Artists => app.artists.next(),
+            Tab::Albums => app.fav_albums.next(),
             Tab::Playlists => app.playlists.next(),
             Tab::Favorites => app.favorites.next(),
             Tab::Search => app.search.pane_next(),
@@ -414,6 +405,7 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter => match app.current_tab {
             Tab::Artists => app.open_selected_artist(),
+            Tab::Albums => app.open_selected_fav_album(),
             Tab::Playlists => app.open_selected_playlist(),
             Tab::Favorites => {
                 let idx = app.favorites.selected;
@@ -461,45 +453,27 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
         KeyCode::Char('f') => match app.current_tab {
             Tab::Artists => {
                 if let Some(artist) = app.artists.selected_item().cloned() {
-                    app.follow_artist(&artist);
+                    app.toggle_follow_artist(&artist);
+                }
+            }
+            Tab::Albums => {
+                if let Some(album) = app.fav_albums.selected_item().cloned() {
+                    app.toggle_favorite_album(&album);
                 }
             }
             Tab::Favorites => {
                 if let Some(track) = app.favorites.selected_item().cloned() {
-                    app.favorite_track(&track);
+                    app.toggle_favorite_track(&track);
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Tracks => {
                 if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
-                    app.favorite_track(&track);
+                    app.toggle_favorite_track(&track);
                 }
             }
             Tab::Search if app.search.pane == SearchPane::Artists => {
                 if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
-                    app.follow_artist(&artist);
-                }
-            }
-            _ => {}
-        },
-        KeyCode::Char('d') => match app.current_tab {
-            Tab::Artists => {
-                if let Some(artist) = app.artists.selected_item().cloned() {
-                    app.unfollow_artist(&artist);
-                }
-            }
-            Tab::Favorites => {
-                if let Some(track) = app.favorites.selected_item().cloned() {
-                    app.unfavorite_track(&track);
-                }
-            }
-            Tab::Search if app.search.pane == SearchPane::Tracks => {
-                if let Some(track) = app.search.tracks.get(app.search.track_sel).cloned() {
-                    app.unfavorite_track(&track);
-                }
-            }
-            Tab::Search if app.search.pane == SearchPane::Artists => {
-                if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
-                    app.unfollow_artist(&artist);
+                    app.toggle_follow_artist(&artist);
                 }
             }
             _ => {}
@@ -605,6 +579,11 @@ fn check_load_more(app: &mut App) {
         Tab::Artists if app.view_stack.is_empty() => {
             if app.artists.should_load_more() {
                 app.load_artists();
+            }
+        }
+        Tab::Albums if app.view_stack.is_empty() => {
+            if app.fav_albums.should_load_more() {
+                app.load_fav_albums();
             }
         }
         Tab::Playlists if app.view_stack.is_empty() => {
