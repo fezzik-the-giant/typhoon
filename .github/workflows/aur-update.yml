@@ -8,6 +8,8 @@ on:
 jobs:
   aur-update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,6 +17,22 @@ jobs:
       - name: Get version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Sync Cargo.toml version to tag
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add Cargo.toml
+          if git diff --staged --quiet; then
+            echo "Cargo.toml already at $VERSION, nothing to do"
+          else
+            git commit -m "chore: set version to $VERSION"
+            git push origin HEAD:main
+            git tag -f ${{ github.ref_name }}
+            git push origin ${{ github.ref_name }} --force
+          fi
 
       - name: Download tarball and compute sha256sum
         id: sha256
