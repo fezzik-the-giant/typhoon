@@ -37,6 +37,11 @@ fn setup_panic_hook() {
 }
 
 fn main() -> Result<()> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     setup_panic_hook();
 
     // Load config and ensure authentication (blocking, before TUI)
