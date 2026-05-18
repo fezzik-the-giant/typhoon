@@ -127,9 +127,18 @@ fn render_sidebar_art(f: &mut Frame, app: &App, area: Rect) {
                         }
                     }
                 }
-                if let Some(cell) = buf.cell_mut((area.x, area.y)) {
-                    cell.skip = false;
-                    cell.set_symbol(seq);
+                let needs_place = {
+                    let placed = np.art_placed.borrow();
+                    match *placed {
+                        Some((pw, ph)) => pw != w || ph != h,
+                        None => true,
+                    }
+                };
+                if needs_place {
+                    use std::io::Write;
+                    let _ = write!(std::io::stdout(), "\x1b[{};{}H{}", area.y + 1, area.x + 1, seq);
+                    let _ = std::io::stdout().flush();
+                    *np.art_placed.borrow_mut() = Some((w, h));
                 }
             }
             _ => {}
@@ -536,9 +545,18 @@ fn render_artist_art(f: &mut Frame, app: &App, detail: &crate::app::ArtistDetail
                         }
                     }
                 }
-                if let Some(cell) = buf.cell_mut((inner.x, inner.y)) {
-                    cell.skip = false;
-                    cell.set_symbol(seq);
+                let needs_place = {
+                    let placed = detail.art_placed.borrow();
+                    match *placed {
+                        Some((pw, ph)) => pw != w || ph != h,
+                        None => true,
+                    }
+                };
+                if needs_place {
+                    use std::io::Write;
+                    let _ = write!(std::io::stdout(), "\x1b[{};{}H{}", inner.y + 1, inner.x + 1, seq);
+                    let _ = std::io::stdout().flush();
+                    *detail.art_placed.borrow_mut() = Some((w, h));
                 }
             }
             _ => {}
@@ -975,9 +993,18 @@ fn render_album_detail(f: &mut Frame, app: &App, detail: &crate::app::AlbumDetai
                             }
                         }
                     }
-                    if let Some(cell) = buf.cell_mut((art_inner.x, art_inner.y)) {
-                        cell.skip = false;
-                        cell.set_symbol(seq);
+                    let needs_place = {
+                        let placed = detail.art_placed.borrow();
+                        match *placed {
+                            Some((pw, ph)) => pw != w || ph != h,
+                            None => true,
+                        }
+                    };
+                    if needs_place {
+                        use std::io::Write;
+                        let _ = write!(std::io::stdout(), "\x1b[{};{}H{}", art_inner.y + 1, art_inner.x + 1, seq);
+                        let _ = std::io::stdout().flush();
+                        *detail.art_placed.borrow_mut() = Some((w, h));
                     }
                 }
                 _ => {}

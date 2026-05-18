@@ -368,7 +368,7 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
     // Apply any collected action (borrow of view_stack has ended)
     match action {
         Action::PlayTracks(tracks, idx) => { app.play_tracks(tracks, idx); return; }
-        Action::OpenAlbum => { kitty_delete_album_art(); kitty_delete_artist_art(); app.open_selected_album(); return; }
+        Action::OpenAlbum => { kitty_delete_album_art(); kitty_delete_artist_art(); app.reset_artist_art_placed(); app.open_selected_album(); return; }
         Action::AddToQueue(track) => { app.add_to_queue(track); return; }
         Action::ToggleFavoriteTrack(track) => { app.toggle_favorite_track(&track); return; }
         Action::ToggleFollowArtist(artist) => { app.toggle_follow_artist(&artist); return; }

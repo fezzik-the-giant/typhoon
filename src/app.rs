@@ -110,6 +110,7 @@ pub struct ArtistDetail {
     pub art_bytes: Option<Vec<u8>>,
     pub art_loading: bool,
     pub art_cache: std::cell::RefCell<Option<(u16, u16, ArtPayload)>>,
+    pub art_placed: std::cell::RefCell<Option<(u16, u16)>>,
     pub bio: Option<String>,
     pub bio_loading: bool,
     pub bio_scroll: u16,
@@ -136,6 +137,7 @@ pub struct AlbumDetail {
     pub art_loading: bool,
     /// Cached render: (cols, rows) keyed to terminal cell dimensions.
     pub art_cache: std::cell::RefCell<Option<(u16, u16, ArtPayload)>>,
+    pub art_placed: std::cell::RefCell<Option<(u16, u16)>>,
 }
 
 // ── View stack ────────────────────────────────────────────────────────────────
@@ -274,6 +276,7 @@ pub struct NowPlaying {
     pub art_bytes: Option<Vec<u8>>,
     pub art_loading: bool,
     pub art_cache: std::cell::RefCell<Option<(u16, u16, ArtPayload)>>,
+    pub art_placed: std::cell::RefCell<Option<(u16, u16)>>,
     pub lyrics_synced: Vec<(f64, String)>,
     pub lyrics_plain: Vec<String>,
     pub lyrics_loading: bool,
@@ -294,6 +297,7 @@ impl Default for NowPlaying {
             art_bytes: None,
             art_loading: false,
             art_cache: std::cell::RefCell::new(None),
+            art_placed: std::cell::RefCell::new(None),
             lyrics_synced: Vec::new(),
             lyrics_plain: Vec::new(),
             lyrics_loading: false,
@@ -538,12 +542,14 @@ impl App {
                     self.now_playing.art_bytes = Some(image_data.clone());
                     self.now_playing.art_loading = false;
                     *self.now_playing.art_cache.borrow_mut() = None;
+                    *self.now_playing.art_placed.borrow_mut() = None;
                 }
                 if let Some(View::AlbumDetail(detail)) = self.view_stack.last_mut() {
                     if detail.album.id == album_id {
                         detail.art_bytes = Some(image_data);
                         detail.art_loading = false;
                         *detail.art_cache.borrow_mut() = None;
+                        *detail.art_placed.borrow_mut() = None;
                     }
                 }
             }
@@ -554,6 +560,7 @@ impl App {
                         detail.art_bytes = Some(image_data);
                         detail.art_loading = false;
                         *detail.art_cache.borrow_mut() = None;
+                        *detail.art_placed.borrow_mut() = None;
                     }
                 }
             }
@@ -970,6 +977,7 @@ impl App {
         };
         self.now_playing.art_bytes = None;
         *self.now_playing.art_cache.borrow_mut() = None;
+        *self.now_playing.art_placed.borrow_mut() = None;
         if let Some(cover_id) = cover_id {
             self.now_playing.art_loading = true;
             let _ = self.api_tx.send(ApiRequest::FetchAlbumArt { album_id, cover_id });
@@ -1025,6 +1033,13 @@ impl App {
         }
     }
 
+    /// Reset placement state on the current ArtistDetail so its art is re-placed after returning to it.
+    pub fn reset_artist_art_placed(&mut self) {
+        if let Some(View::ArtistDetail(detail)) = self.view_stack.last() {
+            *detail.art_placed.borrow_mut() = None;
+        }
+    }
+
     pub fn open_selected_artist(&mut self) {
         let Some(artist) = self.artists.selected_item().cloned() else {
             return;
@@ -1042,6 +1057,7 @@ impl App {
             art_bytes: None,
             art_loading: has_cover,
             art_cache: std::cell::RefCell::new(None),
+            art_placed: std::cell::RefCell::new(None),
         }));
         let _ = self.api_tx.send(ApiRequest::LoadAlbum { album_id });
         let _ = self.api_tx.send(ApiRequest::LoadAlbumTracks { album_id });
@@ -1086,6 +1102,7 @@ impl App {
             art_bytes: None,
             art_loading: has_picture,
             art_cache: std::cell::RefCell::new(None),
+            art_placed: std::cell::RefCell::new(None),
             bio: None,
             bio_loading: true,
             bio_scroll: 0,
