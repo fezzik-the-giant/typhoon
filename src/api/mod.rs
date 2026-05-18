@@ -36,6 +36,8 @@ pub enum ApiRequest {
     UnfollowArtist { artist_id: u64 },
     FavoriteAlbum { album_id: u64 },
     UnfavoriteAlbum { album_id: u64 },
+    SavePlaylist { uuid: String },
+    RemovePlaylist { uuid: String },
     TrackRadio { track_id: u64 },
     ArtistRadio { artist_id: u64 },
 }
@@ -69,6 +71,8 @@ pub enum ApiResponse {
     FavAlbums(Vec<Album>, u32),
     AlbumFavorited,
     AlbumUnfavorited { album_id: u64 },
+    PlaylistSaved,
+    PlaylistRemoved { uuid: String },
     RadioTracks { tracks: Vec<Track> },
     Error(String),
 }
@@ -117,10 +121,26 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
             Err(e) => ApiResponse::Error(e.to_string()),
         },
 
-        ApiRequest::LoadPlaylists { offset } => match client.get_user_playlists(offset, 50).await {
-            Ok(page) => ApiResponse::Playlists(page.items, page.total),
-            Err(e) => ApiResponse::Error(e.to_string()),
-        },
+        ApiRequest::LoadPlaylists { offset } => {
+            match client.get_user_playlists(offset, 100).await {
+                Err(e) => ApiResponse::Error(e.to_string()),
+                Ok(mut page) => {
+                    // On the first page, also pull in followed playlists (saved by others).
+                    if offset == 0 {
+                        if let Ok(fav_page) = client.get_favorite_playlists(100).await {
+                            for entry in fav_page.items {
+                                if !page.items.iter().any(|p| p.uuid == entry.item.uuid) {
+                                    page.items.push(entry.item);
+                                }
+                            }
+                        }
+                        // Set total to actual combined count so StatefulList marks exhausted.
+                        page.total = page.total.max(page.items.len() as u32);
+                    }
+                    ApiResponse::Playlists(page.items, page.total)
+                }
+            }
+        }
 
         ApiRequest::LoadFavAlbums { offset } => match client.get_favorite_albums(offset, 50).await {
             Ok(page) => {
@@ -245,6 +265,16 @@ async fn handle_request(client: Arc<ApiClient>, req: ApiRequest) -> ApiResponse 
         ApiRequest::UnfavoriteAlbum { album_id } => match client.remove_favorite_album(album_id).await {
             Ok(()) => ApiResponse::AlbumUnfavorited { album_id },
             Err(e) => ApiResponse::Error(format!("unfavorite album: {e}")),
+        },
+
+        ApiRequest::SavePlaylist { uuid } => match client.save_playlist(&uuid).await {
+            Ok(()) => ApiResponse::PlaylistSaved,
+            Err(e) => ApiResponse::Error(format!("save playlist: {e}")),
+        },
+
+        ApiRequest::RemovePlaylist { uuid } => match client.remove_playlist(&uuid).await {
+            Ok(()) => ApiResponse::PlaylistRemoved { uuid },
+            Err(e) => ApiResponse::Error(format!("remove playlist: {e}")),
         },
 
         ApiRequest::TrackRadio { track_id } => match client.get_track_radio(track_id, 25).await {

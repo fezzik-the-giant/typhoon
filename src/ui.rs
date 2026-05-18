@@ -761,9 +761,13 @@ fn render_playlist_list(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let height = inner.height as usize;
+    let offset = scroll_offset(app.playlists.selected, height);
     let items: Vec<ListItem> = app.playlists.items
         .iter()
         .enumerate()
+        .skip(offset)
+        .take(height)
         .map(|(i, pl)| {
             let selected = i == app.playlists.selected;
             let style = if selected {

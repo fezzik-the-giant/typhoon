@@ -137,6 +137,11 @@ pub struct Playlist {
     pub number_of_tracks: u32,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FavoritePlaylistEntry {
+    pub item: Playlist,
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

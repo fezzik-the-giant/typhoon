@@ -158,6 +158,28 @@ impl ApiClient {
         .await
     }
 
+    pub async fn get_favorite_playlists(&self, limit: u32) -> Result<Page<FavoritePlaylistEntry>> {
+        let uid = self.uid()?;
+        self.get(
+            &format!("/users/{uid}/favorites/playlists"),
+            &[("limit", limit.to_string()), ("offset", "0".to_string())],
+        )
+        .await
+    }
+
+    pub async fn save_playlist(&self, uuid: &str) -> Result<()> {
+        let uid = self.uid()?;
+        self.post_form(
+            &format!("/users/{uid}/favorites/playlists"),
+            &[("uuid", uuid.to_string())],
+        ).await
+    }
+
+    pub async fn remove_playlist(&self, uuid: &str) -> Result<()> {
+        let uid = self.uid()?;
+        self.delete(&format!("/users/{uid}/favorites/playlists/{uuid}")).await
+    }
+
     pub async fn get_playlist_tracks(&self, uuid: &str, offset: u32, limit: u32) -> Result<Page<Track>> {
         self.get(
             &format!("/playlists/{uuid}/tracks"),

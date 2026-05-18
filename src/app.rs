@@ -467,6 +467,15 @@ impl App {
                     .min(self.fav_albums.items.len().saturating_sub(1));
             }
 
+            ApiResponse::PlaylistSaved => {}
+
+            ApiResponse::PlaylistRemoved { uuid } => {
+                self.playlists.items.retain(|p| p.uuid != uuid);
+                self.playlists.total = self.playlists.total.saturating_sub(1);
+                self.playlists.selected = self.playlists.selected
+                    .min(self.playlists.items.len().saturating_sub(1));
+            }
+
             ApiResponse::Playlists(items, total) => {
                 self.playlists.append(items, total);
             }
@@ -795,6 +804,28 @@ impl App {
             self.unfavorite_album(album);
         } else {
             self.favorite_album(album);
+        }
+    }
+
+    fn save_playlist(&mut self, playlist: &Playlist) {
+        let _ = self.api_tx.send(ApiRequest::SavePlaylist { uuid: playlist.uuid.clone() });
+        if !self.playlists.items.iter().any(|p| p.uuid == playlist.uuid) {
+            self.playlists.items.insert(0, playlist.clone());
+            self.playlists.total = self.playlists.total.saturating_add(1);
+        }
+        self.set_status(format!("Saved '{}' to playlists", playlist.title), StatusLevel::Info);
+    }
+
+    fn remove_playlist(&mut self, playlist: &Playlist) {
+        let _ = self.api_tx.send(ApiRequest::RemovePlaylist { uuid: playlist.uuid.clone() });
+        self.set_status(format!("Removed '{}' from playlists", playlist.title), StatusLevel::Info);
+    }
+
+    pub fn toggle_save_playlist(&mut self, playlist: &Playlist) {
+        if self.playlists.items.iter().any(|p| p.uuid == playlist.uuid) {
+            self.remove_playlist(playlist);
+        } else {
+            self.save_playlist(playlist);
         }
     }
 

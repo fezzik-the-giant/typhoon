@@ -456,6 +456,11 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
                     app.toggle_follow_artist(&artist);
                 }
             }
+            Tab::Playlists => {
+                if let Some(playlist) = app.playlists.selected_item().cloned() {
+                    app.toggle_save_playlist(&playlist);
+                }
+            }
             Tab::Albums => {
                 if let Some(album) = app.fav_albums.selected_item().cloned() {
                     app.toggle_favorite_album(&album);
@@ -474,6 +479,11 @@ fn handle_navigation(app: &mut App, key: KeyEvent) {
             Tab::Search if app.search.pane == SearchPane::Artists => {
                 if let Some(artist) = app.search.artists.get(app.search.artist_sel).cloned() {
                     app.toggle_follow_artist(&artist);
+                }
+            }
+            Tab::Search if app.search.pane == SearchPane::Playlists => {
+                if let Some(playlist) = app.search.playlists.get(app.search.playlist_sel).cloned() {
+                    app.toggle_save_playlist(&playlist);
                 }
             }
             _ => {}
